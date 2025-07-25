@@ -1,0 +1,6 @@
+# created by virtualenv automatically
+*.sqlite3
+*.csv
+*.xlsx
+.venv
+.idea

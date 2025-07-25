@@ -1,0 +1,57 @@
+{% extends 'admin/base_site.html' %}
+{% block extrastyle %}
+<style>
+    .content, .container, #content-main {
+        max-width: 100vw !important;
+        width: 100vw !important;
+        margin: 0 !important;
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+    .dashboard-block {
+        background: #fff;
+        border-radius: 8px;
+        padding: 16px;
+        box-shadow: 0 2px 8px #0001;
+        margin-bottom: 40px;
+        width: 98vw;
+        min-width: 0;
+        overflow-x: auto;
+    }
+    .dashboard-header {
+        margin-bottom: 24px;
+    }
+    .dashboard-back {
+        margin-bottom: 24px;
+        display: inline-block;
+        background: #6366f1;
+        color: #fff;
+        padding: 8px 20px;
+        border-radius: 6px;
+        text-decoration: none;
+        font-weight: 600;
+    }
+    /* Plotly графики на всю ширину */
+    .js-plotly-plot, .plotly-graph-div {
+        width: 100% !important;
+        min-width: 0 !important;
+        max-width: 100vw !important;
+    }
+</style>
+{% endblock %}
+{% block content %}
+<h1 class="dashboard-header">Дашборд по УИК</h1>
+<a href="/admin/" class="dashboard-back">Назад в админку</a>
+<div class="dashboard-block">
+    <h2>Плановое и учтённые по УИК</h2>
+    {{ uik_dashboard_plot1|safe }}
+</div>
+<div class="dashboard-block">
+    <h2>Голоса по способу голосования</h2>
+    {{ uik_dashboard_plot2|safe }}
+    <div style="margin-top: 10px;">
+        <strong>Всего голосов по УИК:</strong><br>
+        {{ uik_dashboard_total_votes|safe }}
+    </div>
+</div>
+{% endblock %} 
