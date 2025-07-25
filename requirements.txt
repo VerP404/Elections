@@ -5,4 +5,5 @@ python-decouple==3.8
 django-import-export==4.3.9
 openpyxl==3.1.5
 xlsxwriter==3.2.0
-pandas==2.3.1 
+pandas==2.3.1
+plotly==6.2.0
