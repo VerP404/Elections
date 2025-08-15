@@ -33,7 +33,7 @@ def create_test_users():
             first_name='Дмитрий',
             last_name='Солнцев',
             middle_name='Александрович',
-            phone_number='89999999999',
+            phone_number='89525540000',
             role='admin',
             workplace=workplace
         )
