@@ -48,6 +48,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'elections_system.middleware.AdminOnlyMiddleware',  # Кастомный middleware для редиректа на админку
+    'elections_system.middleware.PermissionDeniedMiddleware',  # Обработка PermissionDenied
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.locale.LocaleMiddleware',
@@ -177,18 +178,18 @@ CSRF_COOKIE_HTTPONLY = True
 
 # Django Unfold settings
 UNFOLD = {
-    "SITE_TITLE": "Система управления выборами",
-    "SITE_HEADER": "Управление выборами",
+    "SITE_TITLE": "Помощник выборов",
+    "SITE_HEADER": "Помощник выборов",
     "SITE_URL": "/admin/",  # Всегда остаемся в админке
-    "SITE_ICON": {
-        "light": lambda request: "admin/img/icon-yes.svg",
-        "dark": lambda request: "admin/img/icon-yes.svg",
-    },
+    # "SITE_ICON": {
+    #     "light": lambda request: "admin/img/icon-viewlink.svg",
+    #     "dark": lambda request: "admin/img/icon-viewlink.svg",
+    # },
     "SITE_SYMBOL": "ballot",
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,  # Отключаем "Смотреть на сайте" так как сайта нет
     "ENVIRONMENT": "elections_system.settings.environment_callback",
-    "DASHBOARD_CALLBACK": "elections.dashboard.dashboard_callback",
+    "DASHBOARD_CALLBACK": "elections.dashboard.user_dashboard_callback",
     "LOGIN": {
         "image": lambda request: "admin/img/login-bg.jpg",
         "redirect_after": lambda request: "/admin/",
@@ -221,23 +222,29 @@ UNFOLD = {
             },
         },
     },
+    "USER_DISPLAY_NAME": lambda request: request.user.get_full_name() if request.user.is_authenticated else request.user.username,
     "SIDEBAR": {
         "show_search": True,
         "show_all_applications": True,
         "navigation": [
             {
-                "title": "Пользователи",
+                "title": "Участники",
                 "separator": True,
                 "items": [
                     {
-                        "title": "Пользователи",
-                        "icon": "people",
-                        "link": lambda request: "/admin/elections/user/",
+                        "title": "Операторы",
+                        "icon": "person",
+                        "link": lambda request: "/admin/elections/user/?role__exact=operator",
                     },
                     {
-                        "title": "Группы",
-                        "icon": "group_work",
-                        "link": lambda request: "/admin/auth/group/",
+                        "title": "Агитаторы",
+                        "icon": "campaign",
+                        "link": lambda request: "/admin/elections/user/?role__exact=agitator",
+                    },
+                    {
+                        "title": "Бригадиры",
+                        "icon": "supervisor_account",
+                        "link": lambda request: "/admin/elections/user/?role__exact=brigadier",
                     },
                 ],
             },
@@ -255,11 +262,6 @@ UNFOLD = {
                         "icon": "business",
                         "link": lambda request: "/admin/elections/workplace/",
                     },
-                    {
-                        "title": "Участники",
-                        "icon": "group",
-                        "link": lambda request: "/admin/elections/participant/",
-                    },
                 ],
             },
             {
@@ -270,6 +272,16 @@ UNFOLD = {
                         "title": "Избиратели",
                         "icon": "how_to_vote",
                         "link": lambda request: "/admin/elections/voter/",
+                    },
+                    {
+                        "title": "Планируемые избиратели",
+                        "icon": "schedule",
+                        "link": lambda request: "/admin/elections/plannedvoter/",
+                    },
+                    {
+                        "title": "Записи о голосовании",
+                        "icon": "check_circle",
+                        "link": lambda request: "/admin/elections/votingrecord/",
                     },
                 ],
             },
@@ -302,3 +314,37 @@ UNFOLD = {
 def environment_callback(request):
     """Callback to determine environment."""
     return "Разработка" if DEBUG else "Продакшн"
+
+# Настройки логирования для отладки
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'verbose',
+        },
+    },
+    'loggers': {
+        'elections.admin': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django.db.backends': {
+            'handlers': ['console'],
+            'level': 'DEBUG',
+            'propagate': False,
+        },
+    },
+}

@@ -1,165 +1,212 @@
 from django.db.models import Count, Q, Sum
 from django.utils.translation import gettext_lazy as _
 from unfold.widgets import UnfoldAdminDecimalFieldWidget
-from .models import UIK, Voter, Participant, UIKResults
+from .models import UIK, Voter, User, UIKResults, PlannedVoter, VotingRecord
 import plotly.graph_objs as go
-from plotly.offline import plot
+import plotly.offline as pyo
 
 
 def dashboard_callback(request, context):
-    """
-    Функция обратного вызова для дашборда администратора
-    """
+    """Callback для дашборда с графиками"""
+    # Получаем данные для графиков по новой логике
+    uik_data = UIK.objects.annotate(
+        planned_voters_annotated=Count('voter__plannedvoter', distinct=True),
+        confirmed_voters_count=Count('voter__plannedvoter__votingrecord', filter=Q(voter__plannedvoter__votingrecord__confirmed_by_brigadier=True), distinct=True)
+    ).values('number', 'planned_voters_annotated', 'confirmed_voters_count')
     
-    # Статистика по УИК
-    uik_stats = {
-        'total_uik': UIK.objects.count(),
-        'uik_with_results': UIKResults.objects.exclude(
-            ballot_box_votes=0, koib_votes=0, independent_votes=0
-        ).count(),
-    }
-    
-    # Статистика по избирателям
-    voter_stats = {
-        'total_voters': Voter.objects.count(),
-        'voters_with_phone': Voter.objects.exclude(phone_number='').count(),
-        'voters_confirmed': Voter.objects.filter(voting_confirmed=True).count(),
-        'voters_with_agitator': Voter.objects.exclude(agitator__isnull=True).count(),
-        'voters_with_brigadier': Voter.objects.exclude(brigadier__isnull=True).count(),
-    }
-    
-    # Статистика по участникам
-    participant_stats = {
-        'total_participants': Participant.objects.filter(is_active=True).count(),
-        'agitators': Participant.objects.filter(
-            role__in=['agitator', 'both'], is_active=True
-        ).count(),
-        'brigadiers': Participant.objects.filter(
-            role__in=['brigadier', 'both'], is_active=True
-        ).count(),
-    }
-    
-    # Статистика по результатам голосования
-    voting_results = UIKResults.objects.aggregate(
-        total_ballot_box=Sum('ballot_box_votes'),
-        total_koib=Sum('koib_votes'),
-        total_independent=Sum('independent_votes'),
-    )
-    
-    total_votes = sum(filter(None, voting_results.values()))
-    
-    # Топ УИК по количеству избирателей
-    top_uik = UIK.objects.annotate(
-        voters_count=Count('voter')
-    ).order_by('-voters_count')[:5]
-    
-    # Топ агитаторов
-    top_agitators = Participant.objects.filter(
-        role__in=['agitator', 'both'], is_active=True
-    ).annotate(
-        agitated_count=Count('agitated_voters')
-    ).order_by('-agitated_count')[:5]
-    
-    # Процент проголосовавших по УИК
-    uik_voting_stats = []
-    for uik in UIK.objects.all()[:10]:  # Ограничиваем для производительности
-        total_voters = uik.voter_set.count()
-        confirmed_voters = uik.voter_set.filter(voting_confirmed=True).count()
-        percentage = (confirmed_voters / total_voters * 100) if total_voters > 0 else 0
-        uik_voting_stats.append({
-            'uik': uik,
-            'total_voters': total_voters,
-            'confirmed_voters': confirmed_voters,
-            'percentage': round(percentage, 1)
-        })
-    
-    # --- График 1: Плановое и учтённые по УИК ---
-    uik_labels = []
-    planned = []
-    confirmed = []
-    for uik in UIK.objects.all().order_by('number'):
-        uik_labels.append(f"УИК №{uik.number}")
-        planned.append(uik.planned_voters_count)
-        res = getattr(uik, 'uikresults', None)
-        if res:
-            confirmed.append(res.confirmed_voters_count)
-        else:
-            confirmed.append(0)
-    bar1 = go.Bar(name='План', x=uik_labels, y=planned)
-    bar2 = go.Bar(name='Учт.', x=uik_labels, y=confirmed)
-    fig1 = go.Figure(data=[bar1, bar2])
-    fig1.update_layout(
-        barmode='group',
-        title='Плановое и учтённые по УИК',
-        xaxis_title='УИК',
-        yaxis_title='Число избирателей',
-        autosize=True,
-        width=None,
-        height=500,
-        legend=dict(
-            orientation='h',
-            yanchor='bottom', y=1.15,
-            xanchor='center', x=0.5,
-            font=dict(size=10),
-        ),
-        xaxis=dict(tickangle=60, tickfont=dict(size=10)),
-    )
-    plot1_html = plot(fig1, output_type='div', include_plotlyjs='cdn', config={'responsive': True})
-
-    # --- График 2: Урна, КОИБ, Самостоятельно по УИК ---
-    ballot_box = []
-    koib = []
-    independent = []
-    total_votes = []
-    for uik in UIK.objects.all().order_by('number'):
-        res = getattr(uik, 'uikresults', None)
-        if res:
-            ballot_box.append(res.ballot_box_votes)
-            koib.append(res.koib_votes)
-            independent.append(res.independent_votes)
-            total_votes.append(res.total_votes)
-        else:
-            ballot_box.append(0)
-            koib.append(0)
-            independent.append(0)
-            total_votes.append(0)
-    bar3 = go.Bar(name='Урна', x=uik_labels, y=ballot_box)
-    bar4 = go.Bar(name='КОИБ', x=uik_labels, y=koib)
-    bar5 = go.Bar(name='Самост.', x=uik_labels, y=independent)
-    fig2 = go.Figure(data=[bar3, bar4, bar5])
-    fig2.update_layout(
-        barmode='group',
-        title='Голоса по способу голосования',
-        xaxis_title='УИК',
-        yaxis_title='Число голосов',
-        autosize=True,
-        width=None,
-        height=500,
-        legend=dict(
-            orientation='h',
-            yanchor='bottom', y=1.15,
-            xanchor='center', x=0.5,
-            font=dict(size=10),
-        ),
-        xaxis=dict(tickangle=60, tickfont=dict(size=10)),
-    )
-    # Добавляем подписи "Всего голосов" под графиком
-    total_votes_text = '<br>'.join([f'{label}: {val}' for label, val in zip(uik_labels, total_votes)])
-    plot2_html = plot(fig2, output_type='div', include_plotlyjs=False, config={'responsive': True})
-
-    context['uik_dashboard_plot1'] = plot1_html
-    context['uik_dashboard_plot2'] = plot2_html
-    context['uik_dashboard_total_votes'] = total_votes_text
-
-    context.update({
-        'uik_stats': uik_stats,
-        'voter_stats': voter_stats,
-        'participant_stats': participant_stats,
-        'voting_results': voting_results,
-        'total_votes': total_votes,
-        'top_uik': top_uik,
-        'top_agitators': top_agitators,
-        'uik_voting_stats': uik_voting_stats,
+    # Данные для первого графика (планируемые vs подтвержденные)
+    planned_vs_confirmed = []
+    for uik in uik_data:
+            planned_vs_confirmed.append({
+        'uik': f"УИК №{uik['number']}",
+        'planned': uik['planned_voters_annotated'],
+        'confirmed': uik['confirmed_voters_count'],
+        'percentage': round((uik['confirmed_voters_count'] / uik['planned_voters_annotated'] * 100), 1) if uik['planned_voters_annotated'] > 0 else 0
     })
     
-    return context 
+    # Данные для второго графика (способы голосования)
+    voting_methods = []
+    for uik in uik_data:
+        # Получаем данные о способах голосования
+        voting_records = VotingRecord.objects.filter(
+            planned_voter__voter__uik__number=uik['number']
+        ).values('voting_method').annotate(count=Count('id'))
+        
+        ballot_box = next((item['count'] for item in voting_records if item['voting_method'] == 'ballot_box'), 0)
+        koib = next((item['count'] for item in voting_records if item['voting_method'] == 'koib'), 0)
+        independent = next((item['count'] for item in voting_records if item['voting_method'] == 'independent'), 0)
+        
+        voting_methods.append({
+            'uik': f"УИК №{uik['number']}",
+            'ballot_box': ballot_box,
+            'koib': koib,
+            'independent': independent,
+            'total': ballot_box + koib + independent
+        })
+    
+    # Проверяем есть ли данные
+    if not planned_vs_confirmed:
+        context.update({
+            'plot1': '<div class="alert alert-info">Нет данных для отображения</div>',
+            'plot2': '<div class="alert alert-info">Нет данных для отображения</div>',
+        })
+        return context
+    
+    # Создаем графики
+    fig1 = go.Figure()
+    
+    # Первый график - плановое vs подтвержденное
+    uik_names = [item['uik'] for item in planned_vs_confirmed]
+    planned_values = [item['planned'] for item in planned_vs_confirmed]
+    confirmed_values = [item['confirmed'] for item in planned_vs_confirmed]
+    
+    fig1.add_trace(go.Bar(
+        name='Плановое число',
+        x=uik_names,
+        y=planned_values,
+        marker_color='#3b82f6',
+        opacity=0.8
+    ))
+    
+    fig1.add_trace(go.Bar(
+        name='Подтверждено',
+        x=uik_names,
+        y=confirmed_values,
+        marker_color='#10b981',
+        opacity=0.8
+    ))
+    
+    fig1.update_layout(
+        title='Плановое vs Подтвержденное количество избирателей по УИК',
+        xaxis_title='УИК',
+        yaxis_title='Количество избирателей',
+        barmode='group',
+        height=500,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        margin=dict(l=50, r=50, t=80, b=50)
+    )
+    
+    fig1.update_xaxes(tickangle=45)
+    
+    # Второй график - способы голосования
+    fig2 = go.Figure()
+    
+    ballot_box_values = [item['ballot_box'] for item in voting_methods]
+    koib_values = [item['koib'] for item in voting_methods]
+    independent_values = [item['independent'] for item in voting_methods]
+    
+    fig2.add_trace(go.Bar(
+        name='Урна',
+        x=uik_names,
+        y=ballot_box_values,
+        marker_color='#ef4444',
+        opacity=0.8
+    ))
+    
+    fig2.add_trace(go.Bar(
+        name='КОИБ',
+        x=uik_names,
+        y=koib_values,
+        marker_color='#f59e0b',
+        opacity=0.8
+    ))
+    
+    fig2.add_trace(go.Bar(
+        name='Самостоятельно',
+        x=uik_names,
+        y=independent_values,
+        marker_color='#8b5cf6',
+        opacity=0.8
+    ))
+    
+    fig2.update_layout(
+        title='Распределение способов голосования по УИК',
+        xaxis_title='УИК',
+        yaxis_title='Количество избирателей',
+        barmode='group',
+        height=500,
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        ),
+        margin=dict(l=50, r=50, t=80, b=50)
+    )
+    
+    fig2.update_xaxes(tickangle=45)
+    
+    # Конвертируем графики в HTML
+    plot1_html = pyo.plot(fig1, output_type='div', include_plotlyjs=False)
+    plot2_html = pyo.plot(fig2, output_type='div', include_plotlyjs=False)
+    
+    context.update({
+        'plot1': plot1_html,
+        'plot2': plot2_html,
+    })
+    
+    return context
+
+def user_dashboard_callback(request, context):
+    """Callback для персональной главной панели пользователя"""
+    user = request.user
+    
+    # Получаем статистику пользователя
+    user_stats = get_user_statistics(user)
+    
+    context.update({
+        'user_stats': user_stats,
+    })
+    
+    return context
+
+def get_user_statistics(user):
+    """Получение персональной статистики пользователя с учетом ролей"""
+    # Определяем какие записи видит пользователь в зависимости от роли
+    if user.is_superuser or user.role == 'admin':
+        # Админ видит все записи
+        planned_voters = PlannedVoter.objects.all()
+        total_voters = Voter.objects.count()
+    elif user.role == 'brigadier':
+        # Бригадир видит записи своих агитаторов
+        planned_voters = PlannedVoter.objects.filter(agitator__brigadier=user)
+        total_voters = Voter.objects.count()
+    elif user.role == 'agitator':
+        # Агитатор видит только свои записи
+        planned_voters = PlannedVoter.objects.filter(agitator=user)
+        total_voters = Voter.objects.count()
+    else:
+        # По умолчанию - только свои записи
+        planned_voters = PlannedVoter.objects.filter(agitator=user)
+        total_voters = Voter.objects.count()
+    
+    # Количество планируемых избирателей
+    voters_planned = planned_voters.count()
+    
+    # Подтвержденные избиратели
+    voters_confirmed = planned_voters.filter(votingrecord__confirmed_by_brigadier=True).count()
+    
+    # Избиратели с записанным голосованием
+    voters_with_records = planned_voters.filter(votingrecord__isnull=False).count()
+    
+    # Процент от общего количества
+    voters_percentage = round((voters_planned / total_voters * 100), 1) if total_voters > 0 else 0
+    
+    # Эффективность (процент подтвержденных от планируемых)
+    efficiency = round((voters_confirmed / voters_planned * 100), 1) if voters_planned > 0 else 0
+    
+    return {
+        'voters_planned': voters_planned,
+        'voters_confirmed': voters_confirmed,
+        'voters_with_records': voters_with_records,
+        'voters_percentage': voters_percentage,
+        'efficiency': efficiency,
+        'role': user.role,
+    } 
