@@ -8,6 +8,7 @@ from django.utils.safestring import mark_safe
 from django.shortcuts import render
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
+from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 from import_export.formats.base_formats import XLSX, CSV, XLS
@@ -104,6 +105,11 @@ class VoterResource(resources.ModelResource):
 @admin.register(User)
 class UserAdmin(BaseUserAdmin, ModelAdmin):
     """Админка для пользователей с ролями"""
+    
+    # Формы Unfold для правильного стилизования
+    form = UserChangeForm
+    add_form = UserCreationForm
+    change_password_form = AdminPasswordChangeForm
     
     list_display = ['username', 'get_full_name', 'phone_number', 'role', 'workplace', 'is_active_participant', 'is_active']
     list_filter = ['role', 'is_active_participant', 'is_active', 'workplace']
