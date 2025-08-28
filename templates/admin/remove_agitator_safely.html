@@ -1,0 +1,51 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label='elections' %}">Elections</a>
+&rsaquo; <a href="{% url 'admin:elections_uik_changelist' %}">УИК</a>
+&rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+
+<div class="module aligned">
+    <h2>УИК №{{ uik.number }}</h2>
+    <p><strong>Адрес:</strong> {{ uik.address }}</p>
+    <p><strong>Агитаторы:</strong> {{ agitators|length }}</p>
+</div>
+
+<div class="module aligned">
+    <h3>⚠️ Внимание!</h3>
+    <p>При удалении агитатора все его планируемые избиратели будут автоматически перенесены к другому агитатору в этом же УИК.</p>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    
+    <div class="form-row">
+        <div>
+            <label for="agitator">Агитатор для удаления:</label>
+            <select name="agitator" id="agitator" required>
+                <option value="">Выберите агитатора</option>
+                {% for agitator in agitators %}
+                <option value="{{ agitator.id }}">{{ agitator.get_full_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    
+    <div class="submit-row">
+        <input type="submit" value="Удалить агитатора" class="default" style="background-color: #dc3545; border-color: #dc3545;">
+        <a href="{% url 'admin:elections_uik_changelist' %}" class="button cancel-link">Отмена</a>
+    </div>
+</form>
+
+{% endblock %}
+

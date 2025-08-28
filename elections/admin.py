@@ -14,8 +14,10 @@ from import_export.formats.base_formats import XLSX, CSV, XLS
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django.contrib import messages
+from django.http import HttpResponseRedirect
 
-from .models import User, UIK, Workplace, Voter, UIKResults, Analytics, PlannedVoter, VotingRecord
+from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, Analytics, PlannedVoter, VotingRecord
 
 
 # Перерегистрируем стандартную модель Group с нашим стилем
@@ -229,6 +231,9 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     
     # Форматы для импорта-экспорта
     formats = [XLSX, CSV]
+    
+    # Кастомные действия
+    actions = ['transfer_agitator_voters', 'remove_agitator_safely']
     
     def save_model(self, request, obj, form, change):
         """Автоматически устанавливаем создателя/редактора"""
@@ -522,12 +527,95 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         return obj.created_by == request.user
 
     def has_delete_permission(self, request, obj=None):
-        # Только админы могут удалять
-        if request.user.is_superuser or request.user.role == 'admin':
+        # Админы и операторы могут удалять
+        if request.user.is_superuser or request.user.role in ['admin', 'operator']:
             return True
         
         # Остальные роли не могут удалять
         return False
+
+    def transfer_agitator_voters(self, request, queryset):
+        """Массовый перенос избирателей между агитаторами"""
+        if queryset.count() != 1:
+            messages.error(request, "Выберите только один УИК для переноса избирателей.")
+            return
+        
+        uik = queryset.first()
+        
+        # Получаем всех агитаторов УИК
+        agitators = uik.agitators.all()
+        if agitators.count() < 2:
+            messages.error(request, "В УИК должно быть минимум 2 агитатора для переноса.")
+            return
+        
+        # Создаем форму для выбора агитаторов
+        if request.method == 'POST':
+            old_agitator_id = request.POST.get('old_agitator')
+            new_agitator_id = request.POST.get('new_agitator')
+            
+            if old_agitator_id and new_agitator_id:
+                old_agitator = User.objects.get(id=old_agitator_id)
+                new_agitator = User.objects.get(id=new_agitator_id)
+                
+                success, message = uik.transfer_agitator_voters(old_agitator, new_agitator, request.user)
+                
+                if success:
+                    messages.success(request, message)
+                else:
+                    messages.error(request, message)
+                
+                return HttpResponseRedirect(request.get_full_path())
+        
+        context = {
+            'title': 'Перенос избирателей между агитаторами',
+            'uik': uik,
+            'agitators': agitators,
+            'queryset': queryset,
+        }
+        
+        return render(request, 'admin/transfer_agitator_voters.html', context)
+    
+    transfer_agitator_voters.short_description = "Перенести избирателей между агитаторами"
+    
+    def remove_agitator_safely(self, request, queryset):
+        """Безопасное удаление агитатора с переносом избирателей"""
+        if queryset.count() != 1:
+            messages.error(request, "Выберите только один УИК для удаления агитатора.")
+            return
+        
+        uik = queryset.first()
+        
+        # Получаем всех агитаторов УИК
+        agitators = uik.agitators.all()
+        if agitators.count() < 2:
+            messages.error(request, "В УИК должно быть минимум 2 агитатора для безопасного удаления.")
+            return
+        
+        # Создаем форму для выбора агитатора
+        if request.method == 'POST':
+            agitator_id = request.POST.get('agitator')
+            
+            if agitator_id:
+                agitator = User.objects.get(id=agitator_id)
+                success, message = uik.remove_agitator_safely(agitator, request.user)
+                
+                if success:
+                    messages.success(request, message)
+                else:
+                    messages.error(request, message)
+                
+                return HttpResponseRedirect(request.get_full_path())
+        
+        context = {
+            'title': 'Безопасное удаление агитатора',
+            'uik': uik,
+            'agitators': agitators,
+            'queryset': queryset,
+        }
+        
+        return render(request, 'admin/remove_agitator_safely.html', context)
+    
+    remove_agitator_safely.short_description = "Безопасно удалить агитатора"
 
     def get_model_perms(self, request):
         perms = super().get_model_perms(request)
@@ -654,6 +742,132 @@ class UIKResultsAdmin(ImportExportModelAdmin, ModelAdmin):
             obj.ballot_box_percentage,
             obj.koib_percentage,
             obj.independent_percentage
+        )
+
+
+@admin.register(UIKAnalysis)
+class UIKAnalysisAdmin(ImportExportModelAdmin, ModelAdmin):
+    """Админка для анализа по УИК с редактированием в списке"""
+    
+    list_display = [
+        'uik', 'home_plan', 'home_fact', 'home_execution_percentage',
+        'site_plan', 'site_fact', 'site_execution_percentage',
+        'total_plan', 'total_fact', 'plan_execution_percentage'
+    ]
+    list_editable = ['home_plan', 'home_fact', 'site_plan', 'site_fact']  # Редактирование прямо в списке
+    list_filter = ['uik__number', 'updated_at']
+    search_fields = ['uik__number', 'uik__address']
+    ordering = ['uik__number']
+    readonly_fields = ['total_plan', 'total_fact', 'plan_execution_percentage', 'home_execution_percentage', 'site_execution_percentage']
+    
+    # Группировка полей для удобства редактирования
+    fieldsets = (
+        ('УИК', {
+            'fields': ('uik',)
+        }),
+        ('Планы', {
+            'fields': (
+                ('home_plan', 'site_plan'),
+                'total_plan_display'
+            )
+        }),
+        ('Факты', {
+            'fields': (
+                ('home_fact', 'site_fact'),
+                'total_fact_display'
+            )
+        }),
+        ('Статистика выполнения (только для чтения)', {
+            'fields': [
+                'execution_percentages_display'
+            ],
+            'classes': ('collapse',)
+        }),
+    )
+    
+    formats = [XLSX, CSV]
+
+    def save_model(self, request, obj, form, change):
+        """Автоматически устанавливаем создателя/редактора"""
+        if not change:
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+    
+    def has_view_permission(self, request, obj=None):
+        """Разрешения на просмотр"""
+        return request.user.has_perm('elections.view_uikanalysis')
+    
+    def has_add_permission(self, request):
+        """Запрещаем ручное добавление - создается автоматически при создании УИК"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Разрешение на изменение"""
+        return request.user.has_perm('elections.change_uikanalysis')
+    
+    def has_delete_permission(self, request, obj=None):
+        """Разрешение на удаление"""
+        return request.user.has_perm('elections.delete_uikanalysis')
+    
+    @display(description='Общий план')
+    def total_plan(self, obj):
+        return obj.total_plan
+    
+    @display(description='Общий факт')
+    def total_fact(self, obj):
+        return obj.total_fact
+    
+    @display(description='% выполнения')
+    def plan_execution_percentage(self, obj):
+        percent = obj.plan_execution_percentage
+        if percent >= 100:
+            color = 'green'
+        elif percent >= 80:
+            color = 'orange'
+        else:
+            color = 'red'
+        return format_html('<span style="color: {};"><strong>{}%</strong></span>', color, percent)
+    
+    @display(description='% выполнения на дому')
+    def home_execution_percentage(self, obj):
+        percent = obj.home_execution_percentage
+        if percent >= 100:
+            color = 'green'
+        elif percent >= 80:
+            color = 'orange'
+        else:
+            color = 'red'
+        return format_html('<span style="color: {};"><strong>{}%</strong></span>', color, percent)
+    
+    @display(description='% выполнения на участке')
+    def site_execution_percentage(self, obj):
+        percent = obj.site_execution_percentage
+        if percent >= 100:
+            color = 'green'
+        elif percent >= 80:
+            color = 'orange'
+        else:
+            color = 'red'
+        return format_html('<span style="color: {};"><strong>{}%</strong></span>', color, percent)
+    
+    @display(description='Общий план')
+    def total_plan_display(self, obj):
+        return f"{obj.total_plan} голосов"
+    
+    @display(description='Общий факт')
+    def total_fact_display(self, obj):
+        return f"{obj.total_fact} голосов"
+    
+    @display(description='Проценты выполнения')
+    def execution_percentages_display(self, obj):
+        return format_html(
+            "Общий: <strong>{}%</strong><br>"
+            "На дому: <strong>{}%</strong><br>"
+            "На участке: <strong>{}%</strong>",
+            obj.plan_execution_percentage,
+            obj.home_execution_percentage,
+            obj.site_execution_percentage
         )
 
 
@@ -1350,8 +1564,8 @@ class VotingRecordAdmin(ModelAdmin):
         return False
     
     def has_delete_permission(self, request, obj=None):
-        """Запрещаем удаление записей о голосовании"""
-        return False
+        """Разрешаем удаление записей о голосовании только админам и операторам"""
+        return request.user.is_superuser or request.user.role in ['admin', 'operator']
 
 
 # Хелпер для проверки группы

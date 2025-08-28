@@ -226,76 +226,22 @@ UNFOLD = {
     "SIDEBAR": {
         "show_search": True,
         "show_all_applications": True,
-        "navigation": [
-            {
-                "title": "Участники",
-                "separator": True,
-                "items": [
-                    {
-                        "title": "Операторы",
-                        "icon": "person",
-                        "link": lambda request: "/admin/elections/user/?role__exact=operator",
-                    },
-                    {
-                        "title": "Агитаторы",
-                        "icon": "campaign",
-                        "link": lambda request: "/admin/elections/user/?role__exact=agitator",
-                    },
-                    {
-                        "title": "Бригадиры",
-                        "icon": "supervisor_account",
-                        "link": lambda request: "/admin/elections/user/?role__exact=brigadier",
-                    },
-                ],
-            },
-            {
-                "title": "Справочники",
-                "separator": True,
-                "items": [
-                    {
-                        "title": "УИК",
-                        "icon": "location_on",
-                        "link": lambda request: "/admin/elections/uik/",
-                    },
-                    {
-                        "title": "Места работы",
-                        "icon": "business",
-                        "link": lambda request: "/admin/elections/workplace/",
-                    },
-                ],
-            },
-            {
-                "title": "Избиратели",
-                "separator": True,
-                "items": [
-                    {
-                        "title": "Избиратели",
-                        "icon": "how_to_vote",
-                        "link": lambda request: "/admin/elections/voter/",
-                    },
-                    {
-                        "title": "Планируемые избиратели",
-                        "icon": "schedule",
-                        "link": lambda request: "/admin/elections/plannedvoter/",
-                    },
-                    {
-                        "title": "Записи о голосовании",
-                        "icon": "check_circle",
-                        "link": lambda request: "/admin/elections/votingrecord/",
-                    },
-                ],
-            },
-            {
-                "title": "Результаты",
-                "separator": True,
-                "items": [
-                    {
-                        "title": "Результаты по УИК",
-                        "icon": "poll",
-                        "link": lambda request: "/admin/elections/uikresults/",
-                    },
-                ],
-            },
+        "navigation": lambda request: get_sidebar_navigation(request),
+    },
+}
+
+def environment_callback(request):
+    """Callback to determine environment."""
+    return "Разработка" if DEBUG else "Продакшн"
+
+def get_sidebar_navigation(request):
+    """Динамическая навигация на основе роли пользователя"""
+    if not request.user.is_authenticated:
+        return []
+    
+    # Если пользователь - аналитик, показываем только аналитику
+    if hasattr(request.user, 'role') and request.user.role == 'analyst':
+        return [
             {
                 "title": "Аналитика",
                 "separator": True,
@@ -305,15 +251,113 @@ UNFOLD = {
                         "icon": "bar_chart",
                         "link": lambda request: "/dashboard/",
                     },
+                    {
+                        "title": "Анализ по УИК",
+                        "icon": "analytics",
+                        "link": lambda request: "/dashboard/analysis/",
+                    },
                 ],
             },
-        ],
-    },
-}
-
-def environment_callback(request):
-    """Callback to determine environment."""
-    return "Разработка" if DEBUG else "Продакшн"
+        ]
+    
+    # Для всех остальных ролей показываем полную навигацию
+    return [
+        {
+            "title": "Участники",
+            "separator": True,
+            "items": [
+                {
+                    "title": "Операторы",
+                    "icon": "person",
+                    "link": lambda request: "/admin/elections/user/?role__exact=operator",
+                },
+                {
+                    "title": "Агитаторы",
+                    "icon": "campaign",
+                    "link": lambda request: "/admin/elections/user/?role__exact=agitator",
+                },
+                {
+                    "title": "Бригадиры",
+                    "icon": "supervisor_account",
+                    "link": lambda request: "/admin/elections/user/?role__exact=brigadier",
+                },
+                {
+                    "title": "Аналитики",
+                    "icon": "analytics",
+                    "link": lambda request: "/admin/elections/user/?role__exact=analyst",
+                },
+            ],
+        },
+        {
+            "title": "Справочники",
+            "separator": True,
+            "items": [
+                {
+                    "title": "УИК",
+                    "icon": "location_on",
+                    "link": lambda request: "/admin/elections/uik/",
+                },
+                {
+                    "title": "Места работы",
+                    "icon": "business",
+                    "link": lambda request: "/admin/elections/workplace/",
+                },
+            ],
+        },
+        {
+            "title": "Избиратели",
+            "separator": True,
+            "items": [
+                {
+                    "title": "Избиратели",
+                    "icon": "how_to_vote",
+                    "link": lambda request: "/admin/elections/voter/",
+                },
+                {
+                    "title": "Планируемые избиратели",
+                    "icon": "schedule",
+                    "link": lambda request: "/admin/elections/plannedvoter/",
+                },
+                {
+                    "title": "Записи о голосовании",
+                    "icon": "check_circle",
+                    "link": lambda request: "/admin/elections/votingrecord/",
+                },
+            ],
+        },
+        {
+            "title": "Результаты",
+            "separator": True,
+            "items": [
+                {
+                    "title": "Результаты по УИК",
+                    "icon": "poll",
+                    "link": lambda request: "/admin/elections/uikresults/",
+                },
+                {
+                    "title": "Анализ по УИК",
+                    "icon": "analytics",
+                    "link": lambda request: "/admin/elections/uikanalysis/",
+                },
+            ],
+        },
+        {
+            "title": "Аналитика",
+            "separator": True,
+            "items": [
+                {
+                    "title": "Дашборд",
+                    "icon": "bar_chart",
+                    "link": lambda request: "/dashboard/",
+                },
+                {
+                    "title": "Анализ по УИК",
+                    "icon": "analytics",
+                    "link": lambda request: "/dashboard/analysis/",
+                },
+            ],
+        },
+    ]
 
 # Настройки логирования для отладки
 LOGGING = {

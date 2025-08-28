@@ -15,6 +15,7 @@ class User(AbstractUser):
         ('brigadier', 'Бригадир'),
         ('agitator', 'Агитатор'),
         ('operator', 'Оператор'),
+        ('analyst', 'Аналитик'),
     ]
     
     # Кастомный валидатор для username с пробелами
@@ -94,6 +95,10 @@ class User(AbstractUser):
     @property
     def is_admin(self):
         return self.role == 'admin'
+    
+    @property
+    def is_analyst(self):
+        return self.role == 'analyst'
     
     def get_full_name(self):
         """Полное имя пользователя"""
@@ -183,6 +188,49 @@ class UIK(models.Model):
                     raise ValidationError({
                         'agitators': f'Агитатор {agitator.get_full_name()} уже назначен в другой УИК.'
                     })
+    
+    def can_change_agitator(self, old_agitator, new_agitator):
+        """Проверяет, можно ли сменить агитатора"""
+        # Проверяем, что у старого агитатора есть планируемые избиратели
+        planned_voters = PlannedVoter.objects.filter(agitator=old_agitator, voter__uik=self)
+        return planned_voters.exists()
+    
+    def transfer_agitator_voters(self, old_agitator, new_agitator, user=None):
+        """Переносит всех избирателей от старого агитатора к новому"""
+        if not self.can_change_agitator(old_agitator, new_agitator):
+            return False, "У агитатора нет планируемых избирателей"
+        
+        # Переносим всех планируемых избирателей
+        planned_voters = PlannedVoter.objects.filter(agitator=old_agitator, voter__uik=self)
+        transferred_count = 0
+        
+        for planned_voter in planned_voters:
+            planned_voter.agitator = new_agitator
+            if user:
+                planned_voter.updated_by = user
+            planned_voter.save()
+            transferred_count += 1
+        
+        return True, f"Перенесено {transferred_count} избирателей"
+    
+    def remove_agitator_safely(self, agitator, user=None):
+        """Безопасно удаляет агитатора, перенося его избирателей к другому агитатору"""
+        # Находим другого агитатора в том же УИК
+        other_agitators = self.agitators.exclude(id=agitator.id)
+        
+        if not other_agitators.exists():
+            return False, "Нет других агитаторов для переноса избирателей"
+        
+        # Переносим к первому доступному агитатору
+        new_agitator = other_agitators.first()
+        success, message = self.transfer_agitator_voters(agitator, new_agitator, user)
+        
+        if success:
+            # Удаляем агитатора из УИК
+            self.agitators.remove(agitator)
+            return True, f"{message}. Агитатор удален из УИК."
+        
+        return False, message
 
 
 class Workplace(models.Model):
@@ -458,6 +506,64 @@ class VotingRecord(models.Model):
         return self.confirmed_by_brigadier and self.voting_date is not None
 
 
+class UIKAnalysis(models.Model):
+    """Анализ по УИК - планы и факты по дому и участку"""
+    
+    uik = models.OneToOneField(UIK, on_delete=models.CASCADE, verbose_name='УИК', primary_key=True)
+    
+    # Планы
+    home_plan = models.PositiveIntegerField('План на дому', default=0, help_text='Планируемое количество голосов на дому')
+    site_plan = models.PositiveIntegerField('План на участке', default=0, help_text='Планируемое количество голосов на участке')
+    
+    # Факты
+    home_fact = models.PositiveIntegerField('Факт на дому', default=0, help_text='Фактическое количество голосов на дому')
+    site_fact = models.PositiveIntegerField('Факт на участке', default=0, help_text='Фактическое количество голосов на участке')
+    
+    created_at = models.DateTimeField('Дата создания', auto_now_add=True)
+    updated_at = models.DateTimeField('Дата обновления', auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Создал', related_name='created_uik_analyses')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Изменил', related_name='updated_uik_analyses')
+    
+    class Meta:
+        verbose_name = 'Анализ по УИК'
+        verbose_name_plural = 'Анализ по УИК'
+        ordering = ['uik__number']
+        
+    def __str__(self):
+        return f"Анализ УИК №{self.uik.number}"
+    
+    @property
+    def total_plan(self):
+        """Общий план (автоматически рассчитывается)"""
+        return self.home_plan + self.site_plan
+    
+    @property
+    def total_fact(self):
+        """Общий факт (автоматически рассчитывается)"""
+        return self.home_fact + self.site_fact
+    
+    @property
+    def plan_execution_percentage(self):
+        """Процент выполнения плана"""
+        if self.total_plan == 0:
+            return Decimal('0.00')
+        return round(Decimal(self.total_fact) / Decimal(self.total_plan) * 100, 2)
+    
+    @property
+    def home_execution_percentage(self):
+        """Процент выполнения плана на дому"""
+        if self.home_plan == 0:
+            return Decimal('0.00')
+        return round(Decimal(self.home_fact) / Decimal(self.home_plan) * 100, 2)
+    
+    @property
+    def site_execution_percentage(self):
+        """Процент выполнения плана на участке"""
+        if self.site_plan == 0:
+            return Decimal('0.00')
+        return round(Decimal(self.site_fact) / Decimal(self.site_plan) * 100, 2)
+
+
 class Analytics(models.Model):
     """Модель для аналитических данных"""
     
@@ -487,6 +593,13 @@ def update_planned_voter_status(sender, instance, created, **kwargs):
     """Автоматически обновляем статус планируемого избирателя при изменении записи о голосовании"""
     if instance.planned_voter:
         instance.planned_voter.update_status_from_voting_record()
+
+
+@receiver(post_save, sender=UIK)
+def create_uik_analysis(sender, instance, created, **kwargs):
+    """Автоматически создаем запись анализа при создании УИК"""
+    if created:
+        UIKAnalysis.objects.create(uik=instance)
 
 
 

@@ -1,0 +1,467 @@
+{% extends 'admin/base_site.html' %}
+{% block extrastyle %}
+<style>
+    .content, .container, #content-main {
+        max-width: 100% !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    body {
+        margin: 0 !important;
+        padding: 0 !important;
+    }
+    
+    .breadcrumbs {
+        display: none !important;
+    }
+    
+    /* Убираем хлебные крошки */
+    .px-4 .container.mb-12 {
+        display: none !important;
+    }
+    
+    .flex.flex-wrap {
+        display: none !important;
+    }
+    
+    /* Убираем все элементы с классами хлебных крошек */
+    [class*="text-xs"][class*="flex"][class*="flex-wrap"] {
+        display: none !important;
+    }
+    
+    /* Убираем заголовок Django Unfold */
+    .bg-white.border-b.border-base-200 {
+        display: none !important;
+    }
+    
+    /* Убираем все возможные заголовки админки */
+    .container.flex.items-center.h-16 {
+        display: none !important;
+    }
+    
+    #header-inner {
+        display: none !important;
+    }
+    
+    /* Убираем возможные отступы от заголовка */
+    .dark\\:bg-base-900 {
+        display: none !important;
+    }
+    
+    /* Убираем все элементы с классами Tailwind для заголовка */
+    [class*="border-b"][class*="border-base"] {
+        display: none !important;
+    }
+    
+    [class*="h-16"][class*="container"] {
+        display: none !important;
+    }
+    
+    /* Убираем возможные отступы сверху */
+    .mb-6, .mb-4, .mb-2 {
+        margin-bottom: 0 !important;
+    }
+    
+    .px-4 {
+        padding-left: 0 !important;
+        padding-right: 0 !important;
+    }
+    
+    .dashboard-container {
+        display: grid;
+        grid-template-columns: 400px 1fr;
+        gap: 16px;
+        height: calc(100vh - 40px);
+        padding: 16px;
+        box-sizing: border-box;
+    }
+    
+    .left-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+    }
+    
+    .right-panel {
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+    }
+    
+    .dashboard-card {
+        background: #fff;
+        border-radius: 4px;
+        padding: 16px;
+        border: 1px solid #dee2e6;
+        margin-bottom: 16px;
+    }
+    
+    .dashboard-header {
+        margin: 0 0 20px 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 20px 16px;
+        background: #f8f9fa;
+        color: #333;
+        border-bottom: 2px solid #dee2e6;
+    }
+    
+    .dashboard-header h1 {
+        margin: 0 !important;
+        color: #333 !important;
+        font-size: 1.5rem !important;
+        font-weight: 600 !important;
+    }
+    
+    .dashboard-back {
+        background: #007bff;
+        color: white;
+        padding: 8px 16px;
+        border-radius: 4px;
+        text-decoration: none;
+        font-weight: 500;
+        transition: background-color 0.2s ease;
+    }
+    
+    .dashboard-back:hover {
+        background: #0056b3;
+    }
+    
+    .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    
+    .stat-item {
+        text-align: center;
+        padding: 16px;
+        border-radius: 8px;
+        background: #f8fafc;
+    }
+    
+    .stat-number {
+        font-size: 2rem;
+        font-weight: 700;
+        color: #1e293b;
+        margin-bottom: 4px;
+    }
+    
+    .stat-label {
+        font-size: 0.875rem;
+        color: #64748b;
+        font-weight: 500;
+    }
+    
+    .progress-bar {
+        width: 100%;
+        height: 8px;
+        background: #e2e8f0;
+        border-radius: 4px;
+        overflow: hidden;
+        margin-top: 12px;
+    }
+    
+    .progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+        transition: width 0.3s ease;
+    }
+    
+    .uik-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+        table-layout: fixed;
+    }
+    
+    .uik-table th {
+        background: #f1f5f9;
+        padding: 8px 4px;
+        text-align: center;
+        font-weight: 600;
+        color: #475569;
+        border-bottom: 2px solid #e2e8f0;
+        font-size: 0.75rem;
+    }
+    
+    .uik-table td {
+        padding: 6px 4px;
+        text-align: center;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 0.75rem;
+    }
+    
+    /* Ширины колонок */
+    .col-uik { width: 50px; }
+    .col-total { width: 60px; }
+    .col-plan { width: 45px; }
+    .col-fact { width: 45px; }
+    .col-percent { width: 50px; }
+    .col-separator { width: 2px; background: #e2e8f0; }
+    
+    .uik-table tr:hover {
+        background: #f8fafc;
+    }
+    
+    .row-success {
+        background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%);
+    }
+    
+    .row-warning {
+        background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%);
+    }
+    
+    .row-danger-light {
+        background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%);
+    }
+    
+    .row-danger {
+        background: linear-gradient(90deg, rgba(220, 38, 38, 0.15) 0%, rgba(185, 28, 28, 0.1) 100%);
+    }
+    
+    .percentage-badge {
+        display: inline-block;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.75rem;
+    }
+    
+    .percentage-success {
+        background: #dcfce7;
+        color: #166534;
+    }
+    
+    .percentage-warning {
+        background: #fef3c7;
+        color: #92400e;
+    }
+    
+    .percentage-danger {
+        background: #fee2e2;
+        color: #991b1b;
+    }
+    
+    .card-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .table-container {
+        max-height: calc(100vh - 160px);
+        overflow-y: auto;
+        border-radius: 8px;
+        border: 1px solid #e2e8f0;
+        overflow-x: hidden;
+    }
+    
+    .total-column {
+        font-weight: 600;
+    }
+    
+    .row-yellow {
+        background: linear-gradient(90deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%);
+        border-left: 3px solid #f59e0b;
+    }
+    
+    .no-data {
+        text-align: center;
+        padding: 40px;
+        color: #64748b;
+        font-style: italic;
+    }
+    
+    @media (max-width: 1200px) {
+        .dashboard-container {
+            grid-template-columns: 1fr;
+            height: auto;
+        }
+        
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    .last-update {
+        font-size: 0.75rem;
+        color: #64748b;
+        font-weight: 500;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .last-update::before {
+        content: '';
+        font-size: 0.7rem;
+    }
+    
+    .auto-refresh-info {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        background: #28a745;
+        color: white;
+        padding: 6px 10px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        z-index: 1000;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>Анализ по УИК</h1>
+    <a href="/admin/" class="dashboard-back">← Назад в админку</a>
+</div>
+
+<div class="dashboard-container">
+    <!-- Левая панель -->
+    <div class="left-panel">
+        <!-- Общая статистика по УИК -->
+        <div class="dashboard-card">
+            <div class="card-title">Общая статистика</div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number">{{ total_uiks }}</div>
+                    <div class="stat-label">Всего УИК</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">{{ completed_uiks }}</div>
+                    <div class="stat-label">Выполнили план</div>
+                </div>
+            </div>
+            {% if total_uiks > 0 %}
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {% widthratio completed_uiks total_uiks 100 %}%"></div>
+            </div>
+            <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
+                Выполнение: {% widthratio completed_uiks total_uiks 100 %}%
+            </div>
+            {% endif %}
+        </div>
+        
+        <!-- Статистика по избирателям -->
+        <div class="dashboard-card">
+            <div class="card-title">Избиратели</div>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number">{{ total_planned_voters }}</div>
+                    <div class="stat-label">План</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number">{{ total_confirmed_voters }}</div>
+                    <div class="stat-label">Факт</div>
+                </div>
+            </div>
+            {% if total_planned_voters > 0 %}
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {{ voters_percentage }}%"></div>
+            </div>
+            <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
+                Выполнение: {{ voters_percentage }}%
+            </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    <!-- Правая панель - Таблица УИК -->
+    <div class="right-panel">
+        <div class="dashboard-card" style="flex: 1; display: flex; flex-direction: column;">
+            <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
+                <span>Детализация по УИК</span>
+                <div class="last-update">
+                    Обновлено: {{ last_update_time|date:"d.m.Y H:i:s" }}
+                </div>
+            </div>
+            {% if uik_table_data %}
+            <div class="table-container">
+                <table class="uik-table">
+                    <thead>
+                        <tr>
+                            <th class="col-uik">УИК</th>
+                            <th class="col-total">Общий план</th>
+                            <th class="col-total">Общий факт</th>
+                            <th class="col-percent">Общий %</th>
+                            <th class="col-separator"></th>
+                            <th class="col-plan">План на дому</th>
+                            <th class="col-fact">Факт на дому</th>
+                            <th class="col-percent">%</th>
+                            <th class="col-plan">План на участке</th>
+                            <th class="col-fact">Факт на участке</th>
+                            <th class="col-percent">%</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for uik in uik_table_data %}
+                        <tr class="row-{{ uik.row_color }}">
+                            <td><strong>№{{ uik.uik_number }}</strong></td>
+                            <td class="total-column"><strong>{{ uik.total_plan }}</strong></td>
+                            <td class="total-column"><strong>{{ uik.total_fact }}</strong></td>
+                            <td class="total-column">
+                                <span class="percentage-badge 
+                                    {% if uik.execution_percent >= 100 %}percentage-success
+                                    {% elif uik.execution_percent >= 80 %}percentage-warning
+                                    {% else %}percentage-danger{% endif %}">
+                                    {{ uik.execution_percent }}%
+                                </span>
+                            </td>
+                            <td class="col-separator"></td>
+                            <td>{{ uik.home_plan }}</td>
+                            <td>{{ uik.home_fact }}</td>
+                            <td>
+                                <span class="percentage-badge 
+                                    {% if uik.home_execution_percent >= 100 %}percentage-success
+                                    {% elif uik.home_execution_percent >= 80 %}percentage-warning
+                                    {% else %}percentage-danger{% endif %}">
+                                    {{ uik.home_execution_percent }}%
+                                </span>
+                            </td>
+                            <td>{{ uik.site_plan }}</td>
+                            <td>{{ uik.site_fact }}</td>
+                            <td>
+                                <span class="percentage-badge 
+                                    {% if uik.site_execution_percent >= 100 %}percentage-success
+                                    {% elif uik.site_execution_percent >= 80 %}percentage-warning
+                                    {% else %}percentage-danger{% endif %}">
+                                    {{ uik.site_execution_percent }}%
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <div class="no-data">
+                <p>Нет данных для отображения</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<div class="auto-refresh-info">
+    Автообновление каждые 30 сек
+</div>
+
+<script>
+// Автообновление страницы каждые 30 секунд
+setTimeout(function() {
+    window.location.reload();
+}, 30000);
+</script>
+
+{% endblock %}

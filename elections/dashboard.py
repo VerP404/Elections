@@ -1,7 +1,7 @@
 from django.db.models import Count, Q, Sum
 from django.utils.translation import gettext_lazy as _
 from unfold.widgets import UnfoldAdminDecimalFieldWidget
-from .models import UIK, Voter, User, UIKResults, PlannedVoter, VotingRecord
+from .models import UIK, Voter, User, UIKResults, UIKAnalysis, PlannedVoter, VotingRecord
 import plotly.graph_objs as go
 import plotly.offline as pyo
 
@@ -209,4 +209,81 @@ def get_user_statistics(user):
         'voters_percentage': voters_percentage,
         'efficiency': efficiency,
         'role': user.role,
-    } 
+    }
+
+
+def analysis_dashboard_callback(request, context):
+    """Callback для дашборда анализа по УИК"""
+    # Получаем данные анализа по УИК
+    analysis_data = UIKAnalysis.objects.select_related('uik').all()
+    
+    if not analysis_data.exists():
+        context.update({
+            'total_uiks': 0,
+            'completed_uiks': 0,
+            'total_planned_voters': 0,
+            'total_confirmed_voters': 0,
+            'voters_percentage': 0,
+            'uik_table_data': [],
+        })
+        return context
+    
+    # Общая статистика по УИК
+    total_uiks = analysis_data.count()
+    completed_uiks = sum(1 for analysis in analysis_data if analysis.plan_execution_percentage >= 100)
+    
+    # Статистика по избирателям
+    total_planned_voters = sum(analysis.total_plan for analysis in analysis_data)
+    total_confirmed_voters = sum(analysis.total_fact for analysis in analysis_data)
+    voters_percentage = round((total_confirmed_voters / total_planned_voters * 100), 1) if total_planned_voters > 0 else 0
+    
+    # Данные для таблицы УИК
+    uik_table_data = []
+    for analysis in analysis_data:
+        execution_percent = analysis.plan_execution_percentage
+        
+        # Определяем цвет строки на основе выполнения плана
+        if analysis.total_plan == 0:
+            row_color = 'yellow'  # Желтый для плана = 0
+        elif execution_percent >= 100:
+            row_color = 'success'  # Зеленый
+        elif execution_percent >= 80:
+            row_color = 'warning'  # Оранжевый
+        elif execution_percent >= 60:
+            row_color = 'danger-light'  # Светло-красный
+        else:
+            row_color = 'danger'  # Красный
+        
+        uik_table_data.append({
+            'uik_number': analysis.uik.number,
+            'home_plan': analysis.home_plan,
+            'home_fact': analysis.home_fact,
+            'site_plan': analysis.site_plan,
+            'site_fact': analysis.site_fact,
+            'total_plan': analysis.total_plan,
+            'total_fact': analysis.total_fact,
+            'execution_percent': execution_percent,
+            'row_color': row_color,
+            'home_execution_percent': analysis.home_execution_percentage,
+            'site_execution_percent': analysis.site_execution_percentage,
+        })
+    
+    # Сортируем по номеру УИК
+    uik_table_data.sort(key=lambda x: x['uik_number'])
+    
+    # Получаем время последнего обновления данных
+    from django.utils import timezone
+    last_update = UIKAnalysis.objects.order_by('-updated_at').first()
+    last_update_time = last_update.updated_at if last_update else timezone.now()
+    
+    context.update({
+        'total_uiks': total_uiks,
+        'completed_uiks': completed_uiks,
+        'total_planned_voters': total_planned_voters,
+        'total_confirmed_voters': total_confirmed_voters,
+        'voters_percentage': voters_percentage,
+        'uik_table_data': uik_table_data,
+        'last_update_time': last_update_time,
+    })
+    
+    return context 

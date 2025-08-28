@@ -1,0 +1,77 @@
+{% extends "admin/base_site.html" %}
+{% load i18n admin_urls static admin_modify %}
+
+{% block title %}{{ title }} | {{ site_title|default:_('Django site admin') }}{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+<a href="{% url 'admin:index' %}">{% trans 'Home' %}</a>
+&rsaquo; <a href="{% url 'admin:app_list' app_label='elections' %}">Elections</a>
+&rsaquo; <a href="{% url 'admin:elections_uik_changelist' %}">УИК</a>
+&rsaquo; {{ title }}
+</div>
+{% endblock %}
+
+{% block content %}
+<h1>{{ title }}</h1>
+
+<div class="module aligned">
+    <h2>УИК №{{ uik.number }}</h2>
+    <p><strong>Адрес:</strong> {{ uik.address }}</p>
+    <p><strong>Агитаторы:</strong> {{ agitators|length }}</p>
+</div>
+
+<form method="post">
+    {% csrf_token %}
+    
+    <div class="form-row">
+        <div>
+            <label for="old_agitator">От агитатора:</label>
+            <select name="old_agitator" id="old_agitator" required>
+                <option value="">Выберите агитатора</option>
+                {% for agitator in agitators %}
+                <option value="{{ agitator.id }}">{{ agitator.get_full_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    
+    <div class="form-row">
+        <div>
+            <label for="new_agitator">К агитатору:</label>
+            <select name="new_agitator" id="new_agitator" required>
+                <option value="">Выберите агитатора</option>
+                {% for agitator in agitators %}
+                <option value="{{ agitator.id }}">{{ agitator.get_full_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    
+    <div class="submit-row">
+        <input type="submit" value="Перенести избирателей" class="default">
+        <a href="{% url 'admin:elections_uik_changelist' %}" class="button cancel-link">Отмена</a>
+    </div>
+</form>
+
+<script>
+document.getElementById('old_agitator').addEventListener('change', function() {
+    const oldValue = this.value;
+    const newSelect = document.getElementById('new_agitator');
+    
+    // Очищаем и заполняем второй селект
+    newSelect.innerHTML = '<option value="">Выберите агитатора</option>';
+    
+    {% for agitator in agitators %}
+    if ('{{ agitator.id }}' !== oldValue) {
+        const option = document.createElement('option');
+        option.value = '{{ agitator.id }}';
+        option.textContent = '{{ agitator.get_full_name }}';
+        newSelect.appendChild(option);
+    }
+    {% endfor %}
+});
+</script>
+
+{% endblock %}
+
