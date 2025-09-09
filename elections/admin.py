@@ -1000,6 +1000,58 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         """Обработка ответа после изменения объекта"""
         return super().response_change(request, obj)
     
+    def delete_model(self, request, obj):
+        """Безопасное удаление одной записи"""
+        try:
+            # Проверяем, есть ли связанные объекты, которые могут блокировать удаление
+            from django.db import transaction
+            
+            with transaction.atomic():
+                # Проверяем связи перед удалением
+                voter_name = obj.get_full_name()
+                
+                # Удаляем объект
+                obj.delete()
+                
+                from django.contrib import messages
+                messages.success(request, f"Запись '{voter_name}' успешно удалена")
+                
+        except Exception as e:
+            from django.contrib import messages
+            error_msg = str(e)
+            if "FOREIGN KEY constraint failed" in error_msg:
+                messages.error(request, f"Нельзя удалить запись '{obj.get_full_name()}': есть связанные данные. Обратитесь к администратору.")
+            else:
+                messages.error(request, f"Ошибка при удалении записи '{obj.get_full_name()}': {error_msg}")
+    
+    def delete_queryset(self, request, queryset):
+        """Безопасное удаление множества записей"""
+        deleted_count = 0
+        error_count = 0
+        
+        from django.db import transaction
+        
+        for obj in queryset:
+            try:
+                with transaction.atomic():
+                    obj.delete()
+                    deleted_count += 1
+            except Exception as e:
+                error_count += 1
+                from django.contrib import messages
+                error_msg = str(e)
+                if "FOREIGN KEY constraint failed" in error_msg:
+                    messages.error(request, f"Нельзя удалить запись '{obj.get_full_name()}': есть связанные данные")
+                else:
+                    messages.error(request, f"Ошибка при удалении записи '{obj.get_full_name()}': {error_msg}")
+        
+        # Показываем итоговые уведомления
+        from django.contrib import messages
+        if deleted_count > 0:
+            messages.success(request, f"Успешно удалено записей: {deleted_count}")
+        if error_count > 0:
+            messages.warning(request, f"Записей с ошибками при удалении: {error_count}")
+    
     def clean(self):
         """Валидация в зависимости от роли пользователя"""
         super().clean()
