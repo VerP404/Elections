@@ -256,6 +256,19 @@ def results_dashboard_callback(request, context):
         uik_plan_13_percent = round((item.get_effective_fact_13_sep() / item.plan_13_sep * 100), 1) if item.plan_13_sep > 0 else 0
         uik_plan_14_percent = round((item.get_effective_fact_14_sep() / item.plan_14_sep * 100), 1) if item.plan_14_sep > 0 else 0
         
+        # Информация о бригадире и агитаторах
+        if item.uik.brigadier:
+            brigadier_phone = f" - {item.uik.brigadier.phone_number}" if item.uik.brigadier.phone_number else ""
+            brigadier_info = f"{item.uik.brigadier.get_short_name()}{brigadier_phone}"
+        else:
+            brigadier_info = 'Не назначен'
+        
+        agitators_info = []
+        for agitator in item.uik.agitators.all():
+            agitator_phone = f" - {agitator.phone_number}" if agitator.phone_number else ""
+            agitators_info.append(f"{agitator.get_short_name()}{agitator_phone}")
+        agitators_text = ', '.join(agitators_info) if agitators_info else 'Не назначены'
+        
         uik_table_data.append({
             'uik_number': item.uik.number,
             'plan_total': item.total_plan,
@@ -271,6 +284,8 @@ def results_dashboard_callback(request, context):
             'plan_14_sep': item.plan_14_sep,
             'fact_14_sep': item.get_effective_fact_14_sep(),
             'plan_14_percent': uik_plan_14_percent,
+            'brigadier': brigadier_info,
+            'agitators': agitators_text,
         })
     
     # Сортируем по номеру УИК
