@@ -1,5 +1,5 @@
 from django.core.management.base import BaseCommand
-from elections.models import UIKResultsDaily, VotingRecord
+from elections.models import UIKResultsDaily
 from datetime import date
 
 

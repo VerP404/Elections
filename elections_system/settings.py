@@ -305,16 +305,6 @@ def get_sidebar_navigation(request):
                     "icon": "how_to_vote",
                     "link": lambda request: "/admin/elections/voter/",
                 },
-                {
-                    "title": "Планируемые избиратели",
-                    "icon": "schedule",
-                    "link": lambda request: "/admin/elections/plannedvoter/",
-                },
-                {
-                    "title": "Записи о голосовании",
-                    "icon": "check_circle",
-                    "link": lambda request: "/admin/elections/votingrecord/",
-                },
             ],
         },
         {

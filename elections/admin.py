@@ -10,62 +10,21 @@ from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 from unfold.sections import TableSection
+from unfold.contrib.import_export.forms import ExportForm, ImportForm, SelectableFieldsExportForm
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 from import_export.formats.base_formats import XLSX, CSV, XLS
 from django.db import models
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
+from django import forms
 from django.contrib import messages
 from django.http import HttpResponseRedirect
 
-from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, UIKResultsDaily, Analytics, PlannedVoter, VotingRecord
+from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, UIKResultsDaily, Analytics
 
 
 # Секции для Unfold
-class VotingRecordSection(TableSection):
-    """Секция для отображения записей голосования избирателя"""
-    verbose_name = "Записи о голосовании"
-    height = 200
-    related_name = "plannedvoter_set"
-    fields = ["voting_date", "voting_method", "confirmed_by_brigadier", "actions"]
-    
-    def voting_date(self, instance):
-        """Дата голосования"""
-        if hasattr(instance, 'votingrecord') and instance.votingrecord:
-            if instance.votingrecord.voting_date:
-                return instance.votingrecord.voting_date.strftime('%d.%m.%Y')
-        return "Не указана"
-    voting_date.short_description = "Дата голосования"
-    
-    def voting_method(self, instance):
-        """Способ голосования"""
-        if hasattr(instance, 'votingrecord') and instance.votingrecord:
-            method_choices = {
-                'at_uik': 'В УИК',
-                'at_home': 'На дому'
-            }
-            return method_choices.get(instance.votingrecord.voting_method, instance.votingrecord.voting_method or "Не указан")
-        return "Не указан"
-    voting_method.short_description = "Способ голосования"
-    
-    def confirmed_by_brigadier(self, instance):
-        """Подтверждено бригадиром"""
-        if hasattr(instance, 'votingrecord') and instance.votingrecord:
-            if instance.votingrecord.confirmed_by_brigadier:
-                return format_html('<span style="color: green;">✓ Да</span>')
-            else:
-                return format_html('<span style="color: red;">❌ Нет</span>')
-        return format_html('<span style="color: gray;">—</span>')
-    confirmed_by_brigadier.short_description = "Подтверждено бригадиром"
-    
-    def actions(self, instance):
-        """Действия"""
-        if hasattr(instance, 'votingrecord') and instance.votingrecord and instance.votingrecord.pk:
-            url = reverse('admin:elections_votingrecord_change', args=[instance.votingrecord.pk])
-            return format_html('<a href="{}" target="_blank" style="color: #007bff; text-decoration: none;">Открыть</a>', url)
-        return "—"
-    actions.short_description = "Действия"
 
 
 # Перерегистрируем стандартную модель Group с нашим стилем
@@ -97,25 +56,19 @@ class UserResource(resources.ModelResource):
         fields = (
             'id', 'username', 'last_name', 'first_name', 'middle_name', 
             'phone_number', 'email', 'role', 'workplace', 
-            'is_active_participant', 'is_active'
+            'is_active_participant', 'is_active', 'is_staff', 'is_superuser',
+            'date_joined', 'last_login'
         )
         export_order = (
             'id', 'username', 'last_name', 'first_name', 'middle_name', 
             'phone_number', 'email', 'role', 'workplace', 
-            'is_active_participant', 'is_active'
+            'is_active_participant', 'is_active', 'is_staff', 'is_superuser',
+            'date_joined', 'last_login'
         )
-        import_id_fields = ('username',)  # Уникальное поле для импорта
+        import_id_fields = ('id',)  # Уникальное поле для импорта
         skip_unchanged = True
         report_skipped = True
         
-    def get_export_headers(self, selected_fields=None):
-        """Русские заголовки для экспорта"""
-        if selected_fields is not None:
-            return super().get_export_headers(selected_fields=selected_fields)
-        return [
-            'ID', 'Логин', 'Фамилия', 'Имя', 'Отчество', 'Телефон', 'Email',
-            'Роль', 'Место работы', 'Активный участник', 'Активен'
-        ]
     
     def before_import_row(self, row, **kwargs):
         """Валидация перед импортом строки"""
@@ -126,19 +79,26 @@ class UserResource(resources.ModelResource):
             raise ValidationError("Фамилия обязательна")
         if not row.get('first_name'):
             raise ValidationError("Имя обязательно")
+        if not row.get('middle_name'):
+            raise ValidationError("Отчество обязательно")
         if not row.get('phone_number'):
             raise ValidationError("Телефон обязателен")
         
         # Валидация роли
         role = row.get('role', '').lower()
         valid_roles = ['admin', 'brigadier', 'agitator', 'operator', 'analyst']
-        if role not in valid_roles:
+        if role and role not in valid_roles:
             raise ValidationError(f"Роль должна быть одной из: {', '.join(valid_roles)}")
         
         # Валидация телефона
         phone = row.get('phone_number', '')
         if phone and (not str(phone).startswith('8') or len(str(phone)) != 11):
             raise ValidationError("Телефон должен быть в формате 8XXXXXXXXXX")
+        
+        # Валидация email
+        email = row.get('email', '')
+        if email and '@' not in email:
+            raise ValidationError("Некорректный формат email")
         
         # Обработка места работы
         workplace_value = row.get('workplace', '')
@@ -157,6 +117,17 @@ class UserResource(resources.ModelResource):
                     row['workplace'] = workplace.id
                 except Workplace.DoesNotExist:
                     raise ValidationError(f"Место работы '{workplace_value}' не найдено в базе данных")
+        
+        # Обработка булевых полей
+        for bool_field in ['is_active_participant', 'is_active', 'is_staff', 'is_superuser']:
+            value = row.get(bool_field, '')
+            if value:
+                if str(value).lower() in ['true', '1', 'да', 'yes']:
+                    row[bool_field] = True
+                elif str(value).lower() in ['false', '0', 'нет', 'no']:
+                    row[bool_field] = False
+                else:
+                    row[bool_field] = bool(value)
     
     def before_save_instance(self, instance, row, **kwargs):
         """Обработка перед сохранением"""
@@ -164,11 +135,17 @@ class UserResource(resources.ModelResource):
         if not instance.password or instance.password == '':
             instance.set_password('password123')  # Пароль по умолчанию
         
-        # Устанавливаем активность по умолчанию
+        # Устанавливаем значения по умолчанию
         if instance.is_active is None:
             instance.is_active = True
         if instance.is_active_participant is None:
             instance.is_active_participant = True
+        if instance.is_staff is None:
+            instance.is_staff = False
+        if instance.is_superuser is None:
+            instance.is_superuser = False
+        if not instance.role:
+            instance.role = 'admin'
             
         return instance
 
@@ -184,11 +161,6 @@ class WorkplaceResource(resources.ModelResource):
         skip_unchanged = True
         report_skipped = True
         
-    def get_export_headers(self, selected_fields=None):
-        """Русские заголовки для экспорта"""
-        if selected_fields is not None:
-            return super().get_export_headers(selected_fields=selected_fields)
-        return ['ID', 'Название организации', 'Группа', 'Дата создания']
     
     def before_import_row(self, row, **kwargs):
         """Валидация перед импортом строки"""
@@ -219,17 +191,12 @@ class UIKResource(resources.ModelResource):
     
     class Meta:
         model = UIK
-        fields = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators')
-        export_order = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators')
+        fields = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators', 'created_at', 'updated_at', 'created_by', 'updated_by')
+        export_order = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators', 'created_at', 'updated_at', 'created_by', 'updated_by')
         import_id_fields = ('number',)  # Уникальное поле для импорта
         skip_unchanged = True
         report_skipped = True
         
-    def get_export_headers(self, selected_fields=None):
-        """Русские заголовки для экспорта"""
-        if selected_fields is not None:
-            return super().get_export_headers(selected_fields=selected_fields)
-        return ['ID', 'Номер УИК', 'Адрес', 'Плановое количество избирателей', 'Бригадир', 'Агитаторы', 'Дата создания']
     
     def before_import_row(self, row, **kwargs):
         """Валидация перед импортом строки"""
@@ -290,6 +257,25 @@ class UIKResource(resources.ModelResource):
             agitator_ids = [int(x) for x in str(agitators_value).split(',') if x.strip()]
             instance.agitators.set(agitator_ids)
         
+        # Обрабатываем created_by и updated_by
+        created_by_value = row.get('created_by', '')
+        if created_by_value:
+            if str(created_by_value).isdigit():
+                try:
+                    created_by = User.objects.get(id=int(created_by_value))
+                    instance.created_by = created_by
+                except User.DoesNotExist:
+                    pass  # Игнорируем если пользователь не найден
+        
+        updated_by_value = row.get('updated_by', '')
+        if updated_by_value:
+            if str(updated_by_value).isdigit():
+                try:
+                    updated_by = User.objects.get(id=int(updated_by_value))
+                    instance.updated_by = updated_by
+                except User.DoesNotExist:
+                    pass  # Игнорируем если пользователь не найден
+        
         return instance
 
 
@@ -298,17 +284,174 @@ class VoterResource(resources.ModelResource):
     
     class Meta:
         model = Voter
-        fields = ('id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 'phone_number', 'workplace', 'uik', 'created_at')
-        export_order = ('id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 'phone_number', 'workplace', 'uik', 'created_at')
+        fields = (
+            'id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 
+            'phone_number', 'workplace', 'uik', 'agitator', 'planned_date',
+            'voting_date', 'voting_method', 'confirmed_by_brigadier', 'created_at', 'updated_at', 'created_by', 'updated_by'
+        )
+        export_order = (
+            'id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 
+            'phone_number', 'workplace', 'uik', 'agitator', 'planned_date',
+            'voting_date', 'voting_method', 'confirmed_by_brigadier', 'created_at', 'updated_at', 'created_by', 'updated_by'
+        )
         import_id_fields = ('last_name', 'first_name', 'middle_name', 'birth_date')  # Уникальные поля для импорта
         skip_unchanged = True
         report_skipped = True
+    
+    def before_import_row(self, row, **kwargs):
+        """Валидация перед импортом строки"""
+        from datetime import date
         
-    def get_export_headers(self, selected_fields=None):
-        """Русские заголовки для экспорта"""
-        if selected_fields is not None:
-            return super().get_export_headers(selected_fields=selected_fields)
-        return ['ID', 'Фамилия', 'Имя', 'Отчество', 'Дата рождения', 'Адрес регистрации', 'Телефон', 'Место работы', 'УИК', 'Дата создания']
+        # Проверяем обязательные поля
+        if not row.get('last_name'):
+            raise ValidationError("Фамилия обязательна")
+        if not row.get('first_name'):
+            raise ValidationError("Имя обязательно")
+        if not row.get('birth_date'):
+            raise ValidationError("Дата рождения обязательна")
+        if not row.get('uik'):
+            raise ValidationError("УИК обязателен")
+        
+        # Обработка дат
+        planned_date_value = row.get('planned_date', '')
+        if planned_date_value:
+            try:
+                # Пробуем разные форматы дат
+                if isinstance(planned_date_value, str):
+                    # Если строка, пробуем распарсить
+                    from datetime import datetime
+                    try:
+                        # Пробуем формат YYYY-MM-DD HH:MM:SS
+                        planned_date = datetime.strptime(planned_date_value, '%Y-%m-%d %H:%M:%S').date()
+                    except ValueError:
+                        try:
+                            # Пробуем формат YYYY-MM-DD
+                            planned_date = datetime.strptime(planned_date_value, '%Y-%m-%d').date()
+                        except ValueError:
+                            try:
+                                # Пробуем формат DD.MM.YYYY
+                                planned_date = datetime.strptime(planned_date_value, '%d.%m.%Y').date()
+                            except ValueError:
+                                try:
+                                    # Пробуем формат DD/MM/YYYY
+                                    planned_date = datetime.strptime(planned_date_value, '%d/%m/%Y').date()
+                                except ValueError:
+                                    raise ValidationError(f"Некорректный формат даты планирования: {planned_date_value}")
+                else:
+                    # Если это уже объект datetime, извлекаем дату
+                    if hasattr(planned_date_value, 'date'):
+                        planned_date = planned_date_value.date()
+                    else:
+                        planned_date = planned_date_value
+                
+                # Проверяем, что дата входит в разрешенные
+                allowed_dates = [date(2025, 9, 12), date(2025, 9, 13), date(2025, 9, 14)]
+                if planned_date not in allowed_dates:
+                    raise ValidationError(f"Планируемая дата должна быть 12, 13 или 14 сентября 2025 года, получена: {planned_date}")
+                
+                row['planned_date'] = planned_date
+            except Exception as e:
+                raise ValidationError(f"Ошибка обработки даты планирования: {str(e)}")
+        
+        # Обработка даты голосования
+        voting_date_value = row.get('voting_date', '')
+        if voting_date_value:
+            try:
+                if isinstance(voting_date_value, str):
+                    from datetime import datetime
+                    try:
+                        # Пробуем формат YYYY-MM-DD HH:MM:SS
+                        voting_date = datetime.strptime(voting_date_value, '%Y-%m-%d %H:%M:%S').date()
+                    except ValueError:
+                        try:
+                            # Пробуем формат YYYY-MM-DD
+                            voting_date = datetime.strptime(voting_date_value, '%Y-%m-%d').date()
+                        except ValueError:
+                            try:
+                                # Пробуем формат DD.MM.YYYY
+                                voting_date = datetime.strptime(voting_date_value, '%d.%m.%Y').date()
+                            except ValueError:
+                                try:
+                                    # Пробуем формат DD/MM/YYYY
+                                    voting_date = datetime.strptime(voting_date_value, '%d/%m/%Y').date()
+                                except ValueError:
+                                    raise ValidationError(f"Некорректный формат даты голосования: {voting_date_value}")
+                else:
+                    # Если это уже объект datetime, извлекаем дату
+                    if hasattr(voting_date_value, 'date'):
+                        voting_date = voting_date_value.date()
+                    else:
+                        voting_date = voting_date_value
+                
+                # Проверяем, что дата входит в разрешенные
+                allowed_dates = [date(2025, 9, 12), date(2025, 9, 13), date(2025, 9, 14)]
+                if voting_date not in allowed_dates:
+                    raise ValidationError(f"Дата голосования должна быть 12, 13 или 14 сентября 2025 года, получена: {voting_date}")
+                
+                row['voting_date'] = voting_date
+            except Exception as e:
+                raise ValidationError(f"Ошибка обработки даты голосования: {str(e)}")
+        
+        # Обработка даты рождения
+        birth_date_value = row.get('birth_date', '')
+        if birth_date_value:
+            try:
+                if isinstance(birth_date_value, str):
+                    from datetime import datetime
+                    try:
+                        # Пробуем формат YYYY-MM-DD HH:MM:SS
+                        birth_date = datetime.strptime(birth_date_value, '%Y-%m-%d %H:%M:%S').date()
+                    except ValueError:
+                        try:
+                            # Пробуем формат YYYY-MM-DD
+                            birth_date = datetime.strptime(birth_date_value, '%Y-%m-%d').date()
+                        except ValueError:
+                            try:
+                                # Пробуем формат DD.MM.YYYY
+                                birth_date = datetime.strptime(birth_date_value, '%d.%m.%Y').date()
+                            except ValueError:
+                                try:
+                                    # Пробуем формат DD/MM/YYYY
+                                    birth_date = datetime.strptime(birth_date_value, '%d/%m/%Y').date()
+                                except ValueError:
+                                    raise ValidationError(f"Некорректный формат даты рождения: {birth_date_value}")
+                else:
+                    # Если это уже объект datetime, извлекаем дату
+                    if hasattr(birth_date_value, 'date'):
+                        birth_date = birth_date_value.date()
+                    else:
+                        birth_date = birth_date_value
+                
+                row['birth_date'] = birth_date
+            except Exception as e:
+                raise ValidationError(f"Ошибка обработки даты рождения: {str(e)}")
+        
+        # Обработка булевых полей
+        confirmed_value = row.get('confirmed_by_brigadier', '')
+        if confirmed_value:
+            if str(confirmed_value).lower() in ['true', '1', 'да', 'yes']:
+                row['confirmed_by_brigadier'] = True
+            elif str(confirmed_value).lower() in ['false', '0', 'нет', 'no']:
+                row['confirmed_by_brigadier'] = False
+            else:
+                row['confirmed_by_brigadier'] = bool(confirmed_value)
+        
+        # Валидация: нельзя подтвердить голосование без даты голосования
+        if row.get('confirmed_by_brigadier') and not row.get('voting_date'):
+            raise ValidationError("Нельзя подтвердить голосование без указания даты голосования")
+        
+        # Валидация: если есть дата голосования, должен быть указан способ голосования
+        if row.get('voting_date') and not row.get('voting_method'):
+            raise ValidationError("При указании даты голосования необходимо указать способ голосования")
+    
+    def before_save_instance(self, instance, row, **kwargs):
+        """Обработка перед сохранением"""
+        # Устанавливаем значения по умолчанию
+        if not instance.planned_date:
+            from datetime import date
+            instance.planned_date = date(2025, 9, 12)
+        
+        return instance
 
 
 @admin.register(User)
@@ -317,6 +460,8 @@ class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
     
     # Ресурс для импорта/экспорта
     resource_class = UserResource
+    import_form_class = ImportForm
+    export_form_class = ExportForm
     
     # Формы Unfold для правильного стилизования
     form = UserChangeForm
@@ -428,6 +573,8 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     """Админка для УИК с импортом-экспортом"""
     
     resource_class = UIKResource
+    import_form_class = ImportForm
+    export_form_class = ExportForm
     list_display = ['number', 'address_short', 'brigadier', 'agitators_count', 'planned_voters_count', 'actual_voters_count', 'voters_difference', 'has_results']
     list_filter = ['created_at']
     search_fields = ['number', 'address']
@@ -546,6 +693,8 @@ class WorkplaceAdmin(ImportExportModelAdmin, ModelAdmin):
     """Админка для мест работы с импортом-экспортом"""
     
     resource_class = WorkplaceResource
+    import_form_class = ImportForm
+    export_form_class = ExportForm
     list_display = ['name', 'id', 'group', 'workers_count', 'created_at']
     list_filter = ['created_at']
     search_fields = ['name']
@@ -631,87 +780,202 @@ class WorkplaceAdmin(ImportExportModelAdmin, ModelAdmin):
 
 @admin.register(Voter)
 class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
-    """Админка для избирателей с импортом-экспортом"""
+    """Админка для избирателей с разграничением прав"""
     
     resource_class = VoterResource
-    list_display = [
-        'get_full_name', 'age', 'uik', 'phone_number', 'workplace'
-    ]
-    list_filter = [
-        'uik', 'workplace', 'birth_date',
-    ]
-    search_fields = [
-        'first_name', 'last_name', 'middle_name', 
-        'phone_number', 'registration_address'
-    ]
-    ordering = ['last_name', 'first_name']
-    readonly_fields = ['created_by', 'updated_by', 'created_at', 'updated_at', 'age_display']
+    import_form_class = ImportForm
+    export_form_class = ExportForm
+    # export_form_class = SelectableFieldsExportForm  # Альтернативный вариант с выбором полей
     
-    # Секции для отображения связанных данных
-    list_sections = [VotingRecordSection]
-    
-    # Оптимизация запросов для секций
-    list_per_page = 20
+    list_display = ['full_name', 'birth_date_display', 'uik', 'agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
+    list_filter = ['voting_method', 'confirmed_by_brigadier', 'uik', 'agitator', 'planned_date', 'voting_date', 'created_at']
+    search_fields = ['last_name', 'first_name', 'middle_name', 'phone_number']
+    list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier']
+    list_per_page = 50
     
     # Форматы для импорта-экспорта
     formats = [XLSX, CSV]
     
-    # Используем вкладки для лучшей организации
-    fieldsets = (
-        ('Персональные данные', {
-            'fields': (
-                ('last_name', 'first_name', 'middle_name', 'birth_date'),
-                ('phone_number','workplace'),
-                'registration_address',
-                'uik'
-            ),            
-            'classes': ('tab',)
-        }),
-        ('Системная информация', {
-            'fields': (
-                ('created_by', 'created_at'),
-                ('updated_by', 'updated_at')
-            ),
-            'classes': ('tab', 'collapse')
-        }),
-    )
     
-    # Добавляем кастомные поля для отображения
-    def age_display(self, obj):
-        """Отображение возраста"""
-        return f"{obj.age} лет"
-    age_display.short_description = 'Возраст'
+    @admin.display(description='Дата рождения', ordering='birth_date')
+    def birth_date_display(self, obj):
+        """Компактное отображение даты рождения в формате дд.мм.гггг"""
+        if not obj.birth_date:
+            return '-'
+        return obj.birth_date.strftime('%d.%m.%Y')
+        
+    def changelist_view(self, request, extra_context=None):
+        """Кастомизация отображения списка избирателей"""
+        extra_context = extra_context or {}
+        extra_context['title'] = 'Избиратели'
+        extra_context['subtitle'] = 'Управление избирателями'
+        
+        return super().changelist_view(request, extra_context)
+    
+    
+    def get_fieldsets(self, request, obj=None):
+        """Динамические поля в зависимости от роли"""
+        base_fields = (
+            ('last_name', 'first_name', 'middle_name', 'birth_date'),
+            ('phone_number', 'workplace', 'uik')
+        )
+        
+        if request.user.role == 'agitator':
+            return (
+                ('Персональные данные', {'fields': base_fields}),
+                ('Планирование', {
+                    'fields': ('agitator', 'planned_date'),
+                    'description': 'Вы можете планировать голосование избирателей'
+                }),
+            )
+        
+        elif request.user.role == 'brigadier':
+            return (
+                ('Персональные данные', {'fields': base_fields}),
+                ('Планирование', {'fields': ('agitator', 'planned_date')}),
+                ('Голосование', {
+                    'fields': ('voting_date', 'voting_method', 'confirmed_by_brigadier'),
+                    'description': 'Вы можете подтверждать голосование'
+                }),
+            )
+        
+        else:  # admin
+            return (
+                ('Персональные данные', {'fields': base_fields}),
+                ('Планирование', {'fields': ('agitator', 'planned_date')}),
+                ('Голосование', {'fields': ('voting_date', 'voting_method', 'confirmed_by_brigadier')}),
+            )
+    
+    def get_readonly_fields(self, request, obj=None):
+        """Поля только для чтения"""
+        readonly_fields = list(super().get_readonly_fields(request, obj))
+        
+        if request.user.role == 'agitator':
+            readonly_fields.extend(['confirmed_by_brigadier'])
+        elif request.user.role == 'brigadier':
+            readonly_fields.extend(['agitator'])
+        
+        return readonly_fields
+    
+    def get_queryset(self, request):
+        """Ограничиваем доступ по ролям"""
+        qs = super().get_queryset(request)
+        
+        if request.user.role == 'brigadier':
+            return qs.filter(uik__brigadier=request.user)
+        elif request.user.role == 'agitator':
+            return qs.filter(uik__agitators=request.user)
+        
+        return qs
     
     def save_model(self, request, obj, form, change):
-        """Автоматически устанавливаем создателя/редактора"""
-        if not change:
-            obj.created_by = request.user
-        obj.updated_by = request.user
+        """Сохранение с проверкой прав"""
+        # Сохраняем запрос для валидации
+        obj._request = request
         super().save_model(request, obj, form, change)
     
-    def has_view_permission(self, request, obj=None):
-        """Разрешения на просмотр"""
-        return request.user.has_perm('elections.view_voter')
-    
-    def has_add_permission(self, request):
-        """Разрешение на добавление"""
-        return request.user.has_perm('elections.add_voter')
-    
-    def has_change_permission(self, request, obj=None):
-        """Разрешение на изменение"""
-        return request.user.has_perm('elections.change_voter')
-    
-    def has_delete_permission(self, request, obj=None):
-        """Разрешение на удаление"""
-        return request.user.has_perm('elections.delete_voter')
+    def clean(self):
+        """Валидация в зависимости от роли пользователя"""
+        super().clean()
+        
+        # Получаем текущего пользователя из контекста
+        request = getattr(self, '_request', None)
+        if not request:
+            return
+        
+        # Агитатор не может устанавливать подтверждение
+        if request.user.role == 'agitator' and self.confirmed_by_brigadier:
+            raise ValidationError({
+                'confirmed_by_brigadier': 'Только бригадир может подтверждать голосование'
+            })
+        
+        # Проверяем, что агитатор работает в этом УИК
+        if self.agitator and self.uik:
+            if not self.uik.agitators.filter(id=self.agitator.id).exists():
+                raise ValidationError({
+                    'agitator': f'Агитатор {self.agitator.get_full_name()} не работает в УИК {self.uik.number}'
+                })
+        
+        # Валидация: нельзя подтвердить голосование без даты голосования
+        if self.confirmed_by_brigadier and not self.voting_date:
+            raise ValidationError({
+                'confirmed_by_brigadier': 'Нельзя подтвердить голосование без указания даты голосования'
+            })
+        
+        # Валидация: если есть дата голосования, должен быть указан способ голосования
+        if self.voting_date and not self.voting_method:
+            raise ValidationError({
+                'voting_method': 'При указании даты голосования необходимо указать способ голосования'
+            })
     
     @display(description='ФИО')
-    def get_full_name(self, obj):
+    def full_name(self, obj):
+        """Полное имя избирателя"""
         return obj.get_full_name()
     
-    @display(description='Возраст')
-    def age(self, obj):
-        return f"{obj.age} лет"
+    @display(description='Дата рождения')
+    def birth_date(self, obj):
+        """Компактное отображение даты рождения"""
+        if obj.birth_date:
+            # Принудительно форматируем дату без локализации
+            return obj.birth_date.strftime('%d.%m.%y')
+        return '-'
+    
+    
+    @display(description='УИК')
+    def uik(self, obj):
+        """Компактное отображение УИК"""
+        return f"№{obj.uik.number}"
+    
+    
+    @display(description='Агитатор')
+    def agitator(self, obj):
+        """Компактное отображение агитатора"""
+        if obj.agitator:
+            # Показываем только фамилию и инициалы
+            return f"{obj.agitator.last_name} {obj.agitator.first_name[0]}.{obj.agitator.middle_name[0]}."
+        return '-'
+    
+    
+    @display(description='Подтверждено')
+    def confirmed_by_brigadier(self, obj):
+        """Отображение подтверждения бригадиром"""
+        return 'Да' if obj.confirmed_by_brigadier else 'Нет'
+    
+    @display(description='Способ голосования')
+    def voting_method(self, obj):
+        """Отображение способа голосования"""
+        if obj.voting_method:
+            return dict(obj._meta.get_field('voting_method').choices).get(obj.voting_method, '')
+        return '-'
+    
+    @display(description='Подтверждение')
+    def confirmed_by_brigadier(self, obj):
+        """Отображение подтверждения бригадиром"""
+        return 'Да' if obj.confirmed_by_brigadier else 'Нет'
+    
+    @display(description='Способ голосования')
+    def voting_method(self, obj):
+        """Отображение способа голосования"""
+        if obj.voting_method:
+            return dict(obj._meta.get_field('voting_method').choices).get(obj.voting_method, '')
+        return '-'
+    
+    @display(description='Статус голосования')
+    def voting_status_display(self, obj):
+        """Цветовое отображение статуса голосования с разделением на 2 строки"""
+        if obj.is_voted:
+            method_display = dict(obj._meta.get_field('voting_method').choices).get(obj.voting_method, '')
+            return format_html(
+                '<div style="color: #28a745; font-weight: 500;">✓ Проголосовал</div>'
+                '<div style="color: #6c757d; font-size: 11px;">{}</div>',
+                method_display
+            )
+        else:
+            return format_html(
+                '<div style="color: #007bff; font-weight: 500;">📋 Запланирован</div>'
+                '<div style="color: #6c757d; font-size: 11px;">Ожидает</div>'
+            )
     
 
 
@@ -742,9 +1006,8 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         else:
             qs = qs.filter(created_by=request.user)
         
-        # Оптимизация запросов для секций
+        # Оптимизация запросов
         return qs.prefetch_related(
-            'plannedvoter_set__votingrecord',
             'uik',
             'workplace'
         )
@@ -865,6 +1128,9 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
 class UIKResultsAdmin(ImportExportModelAdmin, ModelAdmin):
     """Админка для результатов по УИК с редактированием в списке"""
     
+    import_form_class = ImportForm
+    export_form_class = ExportForm
+    
     list_display = [
         'uik', 'planned_voters_count', 'confirmed_voters_count', 'confirmed_percent',
         'at_uik_votes', 'at_home_votes',
@@ -975,6 +1241,9 @@ class UIKResultsAdmin(ImportExportModelAdmin, ModelAdmin):
 @admin.register(UIKAnalysis)
 class UIKAnalysisAdmin(ImportExportModelAdmin, ModelAdmin):
     """Админка для анализа по УИК с редактированием в списке"""
+    
+    import_form_class = ImportForm
+    export_form_class = ExportForm
     
     list_display = [
         'uik', 'home_plan', 'home_fact', 'home_execution_percentage',
@@ -1157,641 +1426,8 @@ def create_uik_results(sender, instance, created, **kwargs):
         UIKResults.objects.create(uik=instance)
 
 
-@admin.register(PlannedVoter)
-class PlannedVoterAdmin(ModelAdmin):
-    """Админка для планирования избирателей с массовыми операциями"""
-    
-    # Настройки для отображения в сайдбаре
-    verbose_name = 'Планируемый избиратель'
-    verbose_name_plural = 'Планируемые избиратели'
-    
-    list_display = [
-        'voter', 'agitator', 'planned_date', 'status_display', 'voting_status_display', 'uik'
-    ]
-    
-    def status_display(self, obj):
-        """Красивое отображение статуса планирования"""
-        if obj.status == 'planned':
-            return format_html('<span style="color: blue;">📋 Запланирован</span>')
-        elif obj.status == 'refused':
-            return format_html('<span style="color: red;">❌ Отказался</span>')
-        elif obj.status == 'voted':
-            return format_html('<span style="color: green;">✅ Проголосовал</span>')
-        else:
-            return format_html('<span style="color: gray;">❓ Неизвестно</span>')
-    status_display.short_description = "Статус планирования"
-    status_display.admin_order_field = 'status'
-    
-    def voting_status_display(self, obj):
-        return obj.voting_status_display
-    voting_status_display.short_description = "Статус голосования"
-    voting_status_display.admin_order_field = 'votingrecord__id'
-    list_filter = [
-        'status', 'agitator', 'planned_date', 'created_at', 'voter__uik',
-        ('votingrecord__confirmed_by_brigadier', admin.BooleanFieldListFilter),
-        ('votingrecord__voting_method', admin.AllValuesFieldListFilter),
-    ]
-    search_fields = [
-        'voter__first_name', 'voter__last_name', 'voter__middle_name',
-        'agitator__first_name', 'agitator__last_name'
-    ]
-    ordering = ['-created_at']
-    readonly_fields = ['created_at', 'updated_at', 'voting_status_display']
-    
-    # Массовые операции
-    actions = ['confirm_voting', 'set_planned_date', 'create_voting_records', 'set_status_refused']
-    
-    fieldsets = (
-        ('Планирование', {
-            'fields': (
-                ('voter', 'agitator'),
-                'planned_date',
-                'notes'
-            )
-        }),
-        ('Статус', {
-            'fields': ('status', 'voting_status_display'),
-            'classes': ('collapse',)
-        }),
-        ('Системная информация', {
-            'fields': (
-                ('created_at', 'updated_at')
-            ),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def save_model(self, request, obj, form, change):
-        """Автоматически устанавливаем создателя/редактора"""
-        if not change:
-            obj.created_by = request.user
-        obj.updated_by = request.user
-        super().save_model(request, obj, form, change)
-    
-    def has_change_permission(self, request, obj=None):
-        """Блокируем изменение если голосование подтверждено"""
-        if obj and hasattr(obj, 'votingrecord') and obj.votingrecord.confirmed_by_brigadier:
-            return False
-        return super().has_change_permission(request, obj)
-    
-    def get_readonly_fields(self, request, obj=None):
-        """Делаем поля только для чтения если голосование подтверждено"""
-        readonly_fields = list(super().get_readonly_fields(request, obj))
-        if obj and hasattr(obj, 'votingrecord') and obj.votingrecord.confirmed_by_brigadier:
-            # Добавляем все поля в readonly если голосование подтверждено
-            readonly_fields.extend(['voter', 'agitator', 'planned_date', 'notes', 'status'])
-        return readonly_fields
-    
-    def formfield_for_foreignkey(self, db_field, request, **kwargs):
-        """Кастомизация полей выбора на основе роли пользователя"""
-        if db_field.name == 'voter':
-            # Получаем ID текущего избирателя (если редактируем существующую запись)
-            current_voter_id = None
-            if 'object_id' in request.resolver_match.kwargs:
-                try:
-                    planned_voter = PlannedVoter.objects.get(id=request.resolver_match.kwargs['object_id'])
-                    current_voter_id = planned_voter.voter_id
-                except PlannedVoter.DoesNotExist:
-                    pass
-            
-            # Исключаем избирателей, которые уже в списке планируемых, НО включаем текущего
-            existing_voter_ids = PlannedVoter.objects.values_list('voter_id', flat=True)
-            if current_voter_id:
-                existing_voter_ids = [vid for vid in existing_voter_ids if vid != current_voter_id]
-            
-            # Для агитаторов показываем только избирателей их УИК
-            if request.user.role == 'agitator':
-                uik = UIK.objects.filter(agitators=request.user).first()
-                if uik:
-                    kwargs['queryset'] = Voter.objects.filter(
-                        uik=uik
-                    ).exclude(
-                        id__in=existing_voter_ids
-                    ).order_by('last_name', 'first_name')
-            # Для бригадиров показываем только избирателей их УИК
-            elif request.user.role == 'brigadier':
-                uik = UIK.objects.filter(brigadier=request.user).first()
-                if uik:
-                    kwargs['queryset'] = Voter.objects.filter(
-                        uik=uik
-                    ).exclude(
-                        id__in=existing_voter_ids
-                    ).order_by('last_name', 'first_name')
-            # Для админов и операторов показываем всех избирателей
-            elif request.user.is_superuser or request.user.role in ['admin', 'operator']:
-                kwargs['queryset'] = Voter.objects.exclude(
-                    id__in=existing_voter_ids
-                ).order_by('last_name', 'first_name')
-            else:
-                kwargs['queryset'] = Voter.objects.none()
-        elif db_field.name == 'agitator':
-            # Если пользователь админ - показываем всех агитаторов
-            if request.user.is_superuser or request.user.role == 'admin':
-                kwargs['queryset'] = User.objects.filter(
-                    role='agitator',
-                    is_active_participant=True
-                ).order_by('last_name', 'first_name')
-            # Если пользователь бригадир или агитатор - показываем только агитаторов их УИК
-            elif request.user.role in ['brigadier', 'agitator']:
-                # Получаем УИК пользователя
-                user_uiks = []
-                if request.user.role == 'brigadier':
-                    user_uiks = UIK.objects.filter(brigadier=request.user)
-                elif request.user.role == 'agitator':
-                    user_uiks = UIK.objects.filter(agitators=request.user)
-                
-                if user_uiks.exists():
-                    kwargs['queryset'] = User.objects.filter(
-                        role='agitator',
-                        is_active_participant=True,
-                        assigned_uiks_as_agitator__in=user_uiks
-                    ).order_by('last_name', 'first_name')
-                else:
-                    kwargs['queryset'] = User.objects.none()
-            # Для операторов - показываем агитаторов на основе выбранного УИК в избирателе
-            elif request.user.role == 'operator':
-                # Получаем УИК из выбранного избирателя (если есть)
-                voter_id = request.GET.get('voter') or request.POST.get('voter')
-                if voter_id:
-                    try:
-                        voter = Voter.objects.get(id=voter_id)
-                        kwargs['queryset'] = User.objects.filter(
-                            role='agitator',
-                            is_active_participant=True,
-                            assigned_uiks_as_agitator=voter.uik
-                        ).order_by('last_name', 'first_name')
-                    except Voter.DoesNotExist:
-                        kwargs['queryset'] = User.objects.none()
-                else:
-                    # Если избиратель не выбран, показываем всех агитаторов
-                    kwargs['queryset'] = User.objects.filter(
-                        role='agitator',
-                        is_active_participant=True
-                    ).order_by('last_name', 'first_name')
-            else:
-                kwargs['queryset'] = User.objects.none()
-        return super().formfield_for_foreignkey(db_field, request, **kwargs)
-    
-    @display(description='УИК')
-    def uik(self, obj):
-        """Отображение УИК"""
-        return f"УИК №{obj.voter.uik.number}"
-    
-    @display(description='Статус голосования')
-    def voting_status(self, obj):
-        if obj.has_voting_record:
-            record = obj.votingrecord
-            if record.is_confirmed:
-                return format_html(
-                    '<span style="color: green;">✓ Подтверждено</span>'
-                )
-            elif record.voting_date:
-                return format_html(
-                    '<span style="color: orange;">📅 {}</span>', 
-                    record.voting_date.strftime('%d.%m.%Y')
-                )
-            else:
-                return format_html(
-                    '<span style="color: blue;">📝 Записано</span>'
-                )
-        else:
-            return format_html(
-                '<span style="color: gray;">❌ Не записано</span>'
-            )
-    
-    def voting_status_display(self, obj):
-        if obj.has_voting_record:
-            record = obj.votingrecord
-            if record.is_confirmed:
-                return format_html('<span style="color: green;">✅ Проголосовал</span>')
-            elif record.voting_date:
-                return format_html('<span style="color: orange;">📅 {}</span>', record.voting_date.strftime('%d.%m.%Y'))
-            else:
-                return format_html('<span style="color: blue;">📝 Записано</span>')
-        else:
-            return format_html('<span style="color: gray;">⏳ Ожидает голосования</span>')
-    voting_status_display.short_description = "Статус голосования"
-    voting_status_display.admin_order_field = 'votingrecord__id'
-    
-    # Массовые операции
-    @admin.action(description='Подтвердить голосование')
-    def confirm_voting(self, request, queryset):
-        """Массовое подтверждение голосования бригадиром"""
-        updated = 0
-        for planned_voter in queryset:
-            if planned_voter.has_voting_record:
-                record = planned_voter.votingrecord
-                if record.voting_date and not record.confirmed_by_brigadier:
-                    record.confirmed_by_brigadier = True
-                    record.save()
-                    updated += 1
-        
-        self.message_user(
-            request, 
-            f'Подтверждено голосование для {updated} избирателей'
-        )
-    
-    @admin.action(description='Установить планируемую дату')
-    def set_planned_date(self, request, queryset):
-        """Массовая установка планируемой даты"""
-        from django import forms
-        
-        class DateForm(forms.Form):
-            planned_date = forms.DateField(label='Планируемая дата')
-        
-        if 'apply' in request.POST:
-            form = DateForm(request.POST)
-            if form.is_valid():
-                date = form.cleaned_data['planned_date']
-                updated = queryset.update(planned_date=date)
-                self.message_user(
-                    request, 
-                    f'Установлена планируемая дата для {updated} избирателей'
-                )
-                return
-        else:
-            form = DateForm()
-        
-        return render(
-            request,
-            'admin/plannedvoter/set_date.html',
-            context={
-                'form': form,
-                'queryset': queryset,
-                'opts': self.model._meta,
-                'action': 'set_planned_date'
-            }
-        )
-    
-    @admin.action(description='Создать записи о голосовании')
-    def create_voting_records(self, request, queryset):
-        """Массовое создание записей о голосовании"""
-        created = 0
-        for planned_voter in queryset:
-            if not planned_voter.has_voting_record:
-                VotingRecord.objects.create(planned_voter=planned_voter)
-                created += 1
-        
-        self.message_user(
-            request, 
-            f'Создано {created} записей о голосовании'
-        )
-    
-    @admin.action(description='Отметить как отказавшихся')
-    def set_status_refused(self, request, queryset):
-        """Массовое изменение статуса на 'Отказался'"""
-        updated = queryset.update(status='refused')
-        self.message_user(
-            request, 
-            f'Статус изменен на "Отказался" для {updated} избирателей'
-        )
-    
-
-    
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        
-        # Админ видит все записи
-        if request.user.is_superuser or request.user.role == 'admin':
-            return qs
-        
-        # Бригадир видит записи своего УИК
-        elif request.user.role == 'brigadier':
-            uik = UIK.objects.filter(brigadier=request.user).first()
-            if uik:
-                return qs.filter(voter__uik=uik)
-            return qs.none()
-        
-        # Агитатор видит записи своего УИК
-        elif request.user.role == 'agitator':
-            uik = UIK.objects.filter(agitators=request.user).first()
-            if uik:
-                return qs.filter(voter__uik=uik)
-            return qs.none()
-        
-        # По умолчанию - только свои записи
-        return qs.filter(created_by=request.user)
-    
-    def get_model_perms(self, request):
-        perms = super().get_model_perms(request)
-        
-        # Админы имеют все права
-        if request.user.is_superuser or request.user.role == 'admin':
-            return perms
-        
-        # Бригадиры и агитаторы могут просматривать, добавлять и изменять
-        elif request.user.role in ['brigadier', 'agitator']:
-            return {'add': perms['add'], 'change': perms['change'], 'view': perms['view']}
-        
-        # Операторы могут просматривать, добавлять и изменять
-        elif request.user.role == 'operator':
-            return {'add': perms['add'], 'change': perms['change'], 'view': perms['view']}
-        
-        # Операторы избирателей (старая логика)
-        elif is_operators_user(request.user):
-            return {'add': perms['add'], 'change': perms['change'], 'view': perms['view']}
-        
-        # По умолчанию - только просмотр и добавление
-        return {'add': perms['add'], 'view': perms['view']}
-    
-    def change_view(self, request, object_id, form_url='', extra_context=None):
-        """Показываем предупреждение если запись заблокирована"""
-        obj = self.get_object(request, object_id)
-        if obj and hasattr(obj, 'votingrecord') and obj.votingrecord.confirmed_by_brigadier:
-            from django.contrib import messages
-            messages.warning(
-                request,
-                '⚠️ Эта запись заблокирована для редактирования, так как голосование подтверждено бригадиром. '
-                'Для разблокировки снимите отметку подтверждения в записи о голосовании.'
-            )
-        return super().change_view(request, object_id, form_url, extra_context)
-    
-    def changelist_view(self, request, extra_context=None):
-        """Обработка AJAX запросов для получения агитаторов"""
-        if request.GET.get('ajax') == 'get_agitators':
-            from django.http import JsonResponse
-            voter_id = request.GET.get('voter')
-            
-            if voter_id:
-                try:
-                    voter = Voter.objects.get(id=voter_id)
-                    agitators = User.objects.filter(
-                        role='agitator',
-                        is_active_participant=True,
-                        assigned_uiks_as_agitator=voter.uik
-                    ).values('id', 'last_name', 'first_name', 'middle_name')
-                    
-                    agitators_data = []
-                    for agitator in agitators:
-                        agitators_data.append({
-                            'id': agitator['id'],
-                            'full_name': f"{agitator['last_name']} {agitator['first_name']} {agitator['middle_name']}".strip()
-                        })
-                    
-                    return JsonResponse({'agitators': agitators_data})
-                except Voter.DoesNotExist:
-                    return JsonResponse({'agitators': []})
-            
-            return JsonResponse({'agitators': []})
-        
-        return super().changelist_view(request, extra_context)
 
 
-@admin.register(VotingRecord)
-class VotingRecordAdmin(ModelAdmin):
-    """Админка для записей о голосовании с массовыми операциями"""
-    
-    # Настройки для отображения в сайдбаре
-    verbose_name = 'Запись о голосовании'
-    verbose_name_plural = 'Записи о голосовании'
-    
-    list_display = [
-        'voter', 'agitator', 'voting_date', 'voting_method', 
-        'confirmed_by_brigadier', 'uik'
-    ]
-    list_filter = [
-        'voting_date', 'voting_method', 'confirmed_by_brigadier',
-        'planned_voter__agitator', 'created_at'
-    ]
-    list_editable = ['voting_date', 'voting_method', 'confirmed_by_brigadier']
-    search_fields = [
-        'planned_voter__voter__first_name', 'planned_voter__voter__last_name',
-        'planned_voter__agitator__first_name', 'planned_voter__agitator__last_name'
-    ]
-    ordering = ['-created_at']
-    readonly_fields = ['created_at', 'updated_at', 'is_confirmed_display']
-    
-    # Массовые операции
-    actions = ['confirm_voting', 'set_voting_date', 'set_voting_method']
-    
-    fieldsets = (
-        ('Голосование', {
-            'fields': (
-                'planned_voter',
-                ('voting_date', 'voting_method'),
-                ('confirmed_by_brigadier', 'is_confirmed_display')
-            )
-        }),
-        ('Заметки', {
-            'fields': ('brigadier_notes',)
-        }),
-        ('Системная информация', {
-            'fields': (
-                ('created_at', 'updated_at')
-            ),
-            'classes': ('collapse',)
-        }),
-    )
-    
-    def save_model(self, request, obj, form, change):
-        """Автоматически устанавливаем создателя/редактора"""
-        if not change:
-            obj.created_by = request.user
-        obj.updated_by = request.user
-        super().save_model(request, obj, form, change)
-    
-    def get_fieldsets(self, request, obj=None):
-        """Динамически изменяем поля в зависимости от роли пользователя"""
-        if request.user.role == 'agitator':
-            # Агитатор может заполнять дату голосования и способ
-            return (
-                ('Голосование', {
-                    'fields': (
-                        'planned_voter',
-                        ('voting_date', 'voting_method'),
-                    )
-                }),
-                ('Системная информация', {
-                    'fields': (
-                        ('created_at', 'updated_at')
-                    ),
-                    'classes': ('collapse',)
-                }),
-            )
-        elif request.user.role == 'brigadier':
-            # Бригадир может заполнять дату, способ и подтверждение
-            return (
-                ('Голосование', {
-                    'fields': (
-                        'planned_voter',
-                        ('voting_date', 'voting_method'),
-                        'confirmed_by_brigadier'
-                    )
-                }),
-                ('Заметки', {
-                    'fields': ('brigadier_notes',)
-                }),
-                ('Системная информация', {
-                    'fields': (
-                        ('created_at', 'updated_at')
-                    ),
-                    'classes': ('collapse',)
-                }),
-            )
-        else:
-            # Админ видит все поля
-            return self.fieldsets
-    
-    @display(description='Избиратель')
-    def voter(self, obj):
-        return obj.planned_voter.voter
-    
-    @display(description='Агитатор')
-    def agitator(self, obj):
-        return obj.planned_voter.agitator
-    
-    @display(description='УИК')
-    def uik(self, obj):
-        """Отображение УИК"""
-        return f"УИК №{obj.planned_voter.voter.uik.number}"
-    
-    @display(description='Подтверждено')
-    def is_confirmed_display(self, obj):
-        if obj.is_confirmed:
-            return format_html(
-                '<span style="color: green;">✓ Подтверждено</span>'
-            )
-        else:
-            return format_html(
-                '<span style="color: red;">❌ Не подтверждено</span>'
-            )
-    
-    # Массовые операции
-    @admin.action(description='Подтвердить голосование')
-    def confirm_voting(self, request, queryset):
-        """Массовое подтверждение голосования"""
-        updated = queryset.update(confirmed_by_brigadier=True)
-        self.message_user(
-            request, 
-            f'Подтверждено голосование для {updated} избирателей'
-        )
-    
-    @admin.action(description='Установить дату голосования')
-    def set_voting_date(self, request, queryset):
-        """Массовая установка даты голосования"""
-        from django import forms
-        
-        class DateForm(forms.Form):
-            voting_date = forms.DateField(label='Дата голосования')
-        
-        if 'apply' in request.POST:
-            form = DateForm(request.POST)
-            if form.is_valid():
-                date = form.cleaned_data['voting_date']
-                updated = queryset.update(voting_date=date)
-                self.message_user(
-                    request, 
-                    f'Установлена дата голосования для {updated} избирателей'
-                )
-                return
-        else:
-            form = DateForm()
-        
-        return render(
-            request,
-            'admin/votingrecord/set_date.html',
-            context={
-                'form': form,
-                'queryset': queryset,
-                'opts': self.model._meta,
-                'action': 'set_voting_date'
-            }
-        )
-    
-    @admin.action(description='Установить способ голосования')
-    def set_voting_method(self, request, queryset):
-        """Массовая установка способа голосования"""
-        from django import forms
-        
-        class MethodForm(forms.Form):
-            voting_method = forms.ChoiceField(
-                label='Способ голосования',
-                choices=[
-                    ('at_uik', 'В УИК'),
-                    ('at_home', 'На дому'),
-                ]
-            )
-        
-        if 'apply' in request.POST:
-            form = MethodForm(request.POST)
-            if form.is_valid():
-                method = form.cleaned_data['voting_method']
-                updated = queryset.update(voting_method=method)
-                self.message_user(
-                    request, 
-                    f'Установлен способ голосования для {updated} избирателей'
-                )
-                return
-        else:
-            form = MethodForm()
-        
-        return render(
-            request,
-            'admin/votingrecord/set_method.html',
-            context={
-                'form': form,
-                'queryset': queryset,
-                'opts': self.model._meta,
-                'action': 'set_voting_method'
-            }
-        )
-    
-    def get_queryset(self, request):
-        qs = super().get_queryset(request)
-        
-        # Исключаем записи для отказавшихся избирателей
-        qs = qs.exclude(planned_voter__status='refused')
-        
-        # Админ видит все записи
-        if request.user.is_superuser or request.user.role == 'admin':
-            return qs
-        
-        # Бригадир видит записи своего УИК
-        elif request.user.role == 'brigadier':
-            uik = UIK.objects.filter(brigadier=request.user).first()
-            if uik:
-                return qs.filter(planned_voter__voter__uik=uik)
-            return qs.none()
-        
-        # Агитатор видит записи своего УИК
-        elif request.user.role == 'agitator':
-            uik = UIK.objects.filter(agitators=request.user).first()
-            if uik:
-                return qs.filter(planned_voter__voter__uik=uik)
-            return qs.none()
-        
-        # По умолчанию - только свои записи
-        return qs.filter(created_by=request.user)
-    
-    def get_model_perms(self, request):
-        perms = super().get_model_perms(request)
-        
-        # Админы имеют все права
-        if request.user.is_superuser or request.user.role == 'admin':
-            return perms
-        
-        # Бригадиры и агитаторы могут только просматривать и изменять (не добавлять/удалять)
-        elif request.user.role in ['brigadier', 'agitator']:
-            return {'change': perms['change'], 'view': perms['view']}
-        
-        # Операторы могут только просматривать и изменять (не добавлять/удалять)
-        elif request.user.role == 'operator':
-            return {'change': perms['change'], 'view': perms['view']}
-        
-        # Операторы избирателей (старая логика)
-        elif is_operators_user(request.user):
-            return {'add': perms['add'], 'change': perms['change'], 'view': perms['view']}
-        
-        # По умолчанию - только просмотр
-        return {'view': perms['view']}
-    
-    def has_add_permission(self, request):
-        """Запрещаем ручное добавление записей о голосовании"""
-        return False
-    
-    def has_delete_permission(self, request, obj=None):
-        """Разрешаем удаление записей о голосовании только админам и операторам"""
-        return request.user.is_superuser or request.user.role in ['admin', 'operator']
 
 
 # Хелпер для проверки группы
@@ -1803,6 +1439,9 @@ def is_operators_user(user):
 @admin.register(UIKResultsDaily)
 class UIKResultsDailyAdmin(ImportExportModelAdmin, ModelAdmin):
     """Админка для результатов по дням УИК с редактированием в списке"""
+    
+    import_form_class = ImportForm
+    export_form_class = ExportForm
     
     list_display = [
         'uik', 'total_plan', 'total_fact', 'plan_execution_percentage',

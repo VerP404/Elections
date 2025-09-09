@@ -2,7 +2,7 @@
 from django.db.models import Count, Q, Sum
 from django.utils.translation import gettext_lazy as _
 from unfold.widgets import UnfoldAdminDecimalFieldWidget
-from .models import UIK, Voter, User, UIKResults, UIKAnalysis, UIKResultsDaily, PlannedVoter, VotingRecord
+from .models import UIK, Voter, User, UIKResults, UIKAnalysis, UIKResultsDaily, Workplace
 from datetime import date
 from decimal import Decimal
 
@@ -206,15 +206,15 @@ def results_dashboard_callback(request, context):
     total_fact = sum(item.total_fact for item in daily_data)
     plan_execution_percent = round((total_fact / total_plan * 100), 1) if total_plan > 0 else 0
     
-    # Подсчет голосов по способам
-    from .models import VotingRecord
+    # Подсчет голосов по способам из новой модели Voter
     from datetime import date
     
     # Общий подсчет голосов В УИК (подтвержденных)
-    total_at_uik = VotingRecord.objects.filter(
-        planned_voter__voter__uik__in=[item.uik for item in daily_data],
+    total_at_uik = Voter.objects.filter(
+        uik__in=[item.uik for item in daily_data],
         voting_method='at_uik',
-        confirmed_by_brigadier=True
+        confirmed_by_brigadier=True,
+        voting_date__isnull=False
     ).count()
     
     # На дому = общий факт - В УИК
@@ -276,6 +276,67 @@ def results_dashboard_callback(request, context):
     # Сортируем по номеру УИК
     uik_table_data.sort(key=lambda x: x['uik_number'])
     
+    # Данные для диаграмм
+    # 1. Статус голосования (на основе UIKResultsDaily: Общий план и Общий факт)
+    voting_status_data = {
+        'labels': ['Проголосовали', 'Осталось по плану'],
+        'data': [total_fact, total_plan - total_fact],
+        'colors': ['#10b981', '#f59e0b']
+    }
+    
+    # 2. Голосование по всем группам (исключая 'other')
+    workplace_groups = [choice[0] for choice in Workplace.GROUP_CHOICES if choice[0] != 'other']
+    group_data = []
+    group_voted_data = []
+    group_labels = []
+    
+    for group in workplace_groups:
+        group_name = dict(Workplace.GROUP_CHOICES).get(group, group)
+        group_labels.append(group_name)
+        
+        # Общее количество в группе
+        total_in_group = Voter.objects.filter(
+            uik__in=[item.uik for item in daily_data],
+            workplace__group=group
+        ).count()
+        group_data.append(total_in_group)
+        
+        # Проголосовавшие в группе
+        voted_in_group = Voter.objects.filter(
+            uik__in=[item.uik for item in daily_data],
+            workplace__group=group,
+            confirmed_by_brigadier=True,
+            voting_date__isnull=False
+        ).count()
+        group_voted_data.append(voted_in_group)
+    
+    workplace_groups_data = {
+        'labels': group_labels,
+        'total_data': group_data,
+        'voted_data': group_voted_data,
+        'colors': ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#f97316', '#84cc16', '#06b6d4']
+    }
+    
+    # 3. Специальная диаграмма для БУЗ ВО "ВГКП № 3"
+    vgkp3_total = Voter.objects.filter(
+        uik__in=[item.uik for item in daily_data],
+        workplace__name='БУЗ ВО "ВГКП № 3"'
+    ).count()
+    
+    vgkp3_voted = Voter.objects.filter(
+        uik__in=[item.uik for item in daily_data],
+        workplace__name='БУЗ ВО "ВГКП № 3"',
+        confirmed_by_brigadier=True,
+        voting_date__isnull=False
+    ).count()
+    
+    vgkp3_data = {
+        'labels': ['Проголосовали', 'Осталось по плану'],
+        'data': [vgkp3_voted, vgkp3_total - vgkp3_voted],
+        'colors': ['#10b981', '#f59e0b'],
+        'title': 'БУЗ ВО "ВГКП № 3"'
+    }
+    
     context.update({
         'total_plan': total_plan,
         'total_fact': total_fact,
@@ -292,6 +353,10 @@ def results_dashboard_callback(request, context):
         'total_14_sep': total_14_sep,
         'plan_14_percent': plan_14_percent,
         'uik_table_data': uik_table_data,
+        # Данные для диаграмм
+        'voting_status_data': voting_status_data,
+        'workplace_groups_data': workplace_groups_data,
+        'vgkp3_data': vgkp3_data,
     })
     
     return context

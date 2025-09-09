@@ -72,17 +72,23 @@
     
     .dashboard-container {
         display: grid;
-        grid-template-columns: 400px 1fr;
-        gap: 16px;
+        grid-template-columns: 300px 400px 1fr;
+        gap: 12px;
         height: calc(100vh - 40px);
-        padding: 16px;
+        padding: 12px;
         box-sizing: border-box;
     }
     
     .left-panel {
         display: flex;
         flex-direction: column;
-        gap: 16px;
+        gap: 12px;
+    }
+    
+    .middle-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
     }
     
     .right-panel {
@@ -334,6 +340,41 @@
         z-index: 1000;
     }
     
+    /* Стили для диаграмм */
+    .chart-container {
+        position: relative;
+        height: 200px;
+        margin: 10px 0;
+    }
+    
+    .chart-title {
+        font-size: 0.9rem;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 8px;
+        text-align: center;
+    }
+    
+    .chart-card {
+        background: #fff;
+        border-radius: 4px;
+        padding: 12px;
+        border: 1px solid #dee2e6;
+        margin-bottom: 12px;
+    }
+    
+    .chart-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+    }
+    
+    .chart-grid-single {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    
     @media (max-width: 1200px) {
         .dashboard-container {
             grid-template-columns: 1fr;
@@ -343,6 +384,10 @@
         .stats-grid {
             grid-template-columns: 1fr;
         }
+        
+        .chart-grid {
+            grid-template-columns: 1fr;
+        }
     }
 </style>
 {% endblock %}
@@ -350,7 +395,7 @@
 {% block content %}
 <div class="dashboard-header">
     <h1>Результаты голосования</h1>
-    <a href="/admin/" class="dashboard-back">← Назад в админку</a>
+    <a href="/admin/" class="dashboard-back">← Назад</a>
 </div>
 
 <div class="dashboard-container">
@@ -454,6 +499,33 @@
         </div>
     </div>
     
+    <!-- Средняя панель - Диаграммы -->
+    <div class="middle-panel">
+        <!-- Статус голосования -->
+        <div class="chart-card">
+            <div class="chart-title">Статус голосования</div>
+            <div class="chart-container">
+                <canvas id="votingStatusChart"></canvas>
+            </div>
+        </div>
+        
+        <!-- БУЗ ВО "ВГКП № 3" -->
+        <div class="chart-card">
+            <div class="chart-title">БУЗ ВО "ВГКП № 3"</div>
+            <div class="chart-container">
+                <canvas id="vgkp3Chart"></canvas>
+            </div>
+        </div>
+        
+        <!-- Голосование по всем группам -->
+        <div class="chart-card">
+            <div class="chart-title">Голосование по группам</div>
+            <div class="chart-container">
+                <canvas id="workplaceGroupsChart"></canvas>
+            </div>
+        </div>
+    </div>
+    
     <!-- Правая панель - Таблица результатов -->
     <div class="right-panel">
         <div class="dashboard-card" style="flex: 1; display: flex; flex-direction: column;">
@@ -547,7 +619,224 @@
     Автообновление каждые 30 сек
 </div>
 
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
+// Данные для диаграмм
+const votingStatusData = {
+    labels: {{ voting_status_data.labels|safe }},
+    data: {{ voting_status_data.data|safe }},
+    colors: {{ voting_status_data.colors|safe }}
+};
+
+const vgkp3Data = {
+    labels: {{ vgkp3_data.labels|safe }},
+    data: {{ vgkp3_data.data|safe }},
+    colors: {{ vgkp3_data.colors|safe }}
+};
+
+const workplaceGroupsData = {
+    labels: {{ workplace_groups_data.labels|safe }},
+    totalData: {{ workplace_groups_data.total_data|safe }},
+    votedData: {{ workplace_groups_data.voted_data|safe }},
+    colors: {{ workplace_groups_data.colors|safe }}
+};
+
+// Создание диаграмм
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. Статус голосования (круговая)
+    const votingStatusCtx = document.getElementById('votingStatusChart').getContext('2d');
+    new Chart(votingStatusCtx, {
+        type: 'doughnut',
+        data: {
+            labels: votingStatusData.labels,
+            datasets: [{
+                data: votingStatusData.data,
+                backgroundColor: votingStatusData.colors,
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 10,
+                        font: { size: 11 }
+                    }
+                }
+            }
+        },
+        plugins: [{
+            id: 'datalabels',
+            afterDatasetsDraw: (chart) => {
+                const { ctx, data } = chart;
+                
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#333';
+                ctx.font = 'bold 14px Arial';
+                
+                data.datasets[0].data.forEach((value, index) => {
+                    const meta = chart.getDatasetMeta(0);
+                    const point = meta.data[index];
+                    if (point && value > 0) {
+                        const angle = point.startAngle + (point.endAngle - point.startAngle) / 2;
+                        const x = point.x + Math.cos(angle) * 30;
+                        const y = point.y + Math.sin(angle) * 30;
+                        
+                        ctx.fillText(value.toString(), x, y);
+                    }
+                });
+                ctx.restore();
+            }
+        }]
+    });
+
+    // 2. БУЗ ВО "ВГКП № 3" (круговая)
+    const vgkp3Ctx = document.getElementById('vgkp3Chart').getContext('2d');
+    new Chart(vgkp3Ctx, {
+        type: 'doughnut',
+        data: {
+            labels: vgkp3Data.labels,
+            datasets: [{
+                data: vgkp3Data.data,
+                backgroundColor: vgkp3Data.colors,
+                borderWidth: 2,
+                borderColor: '#fff'
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 10,
+                        font: { size: 11 }
+                    }
+                }
+            }
+        },
+        plugins: [{
+            id: 'datalabels',
+            afterDatasetsDraw: (chart) => {
+                const { ctx, data } = chart;
+                
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillStyle = '#333';
+                ctx.font = 'bold 14px Arial';
+                
+                data.datasets[0].data.forEach((value, index) => {
+                    const meta = chart.getDatasetMeta(0);
+                    const point = meta.data[index];
+                    if (point && value > 0) {
+                        const angle = point.startAngle + (point.endAngle - point.startAngle) / 2;
+                        const x = point.x + Math.cos(angle) * 30;
+                        const y = point.y + Math.sin(angle) * 30;
+                        
+                        ctx.fillText(value.toString(), x, y);
+                    }
+                });
+                ctx.restore();
+            }
+        }]
+    });
+
+    // 3. Голосование по группам (столбчатая)
+    const workplaceGroupsCtx = document.getElementById('workplaceGroupsChart').getContext('2d');
+    new Chart(workplaceGroupsCtx, {
+        type: 'bar',
+        data: {
+            labels: workplaceGroupsData.labels,
+            datasets: [
+                {
+                    label: 'Всего',
+                    data: workplaceGroupsData.totalData,
+                    backgroundColor: workplaceGroupsData.colors.map(color => color + '40'),
+                    borderColor: workplaceGroupsData.colors,
+                    borderWidth: 1
+                },
+                {
+                    label: 'Проголосовали',
+                    data: workplaceGroupsData.votedData,
+                    backgroundColor: workplaceGroupsData.colors,
+                    borderColor: workplaceGroupsData.colors,
+                    borderWidth: 1
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 10,
+                        font: { size: 11 }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    suggestedMax: function(context) {
+                        const max = Math.max(...context.chart.data.datasets.flatMap(d => d.data));
+                        return Math.ceil(max * 1.2); // Добавляем 20% запаса сверху
+                    },
+                    ticks: {
+                        font: { size: 10 },
+                        stepSize: 1, // Только целые числа
+                        callback: function(value) {
+                            return Number.isInteger(value) ? value : null;
+                        }
+                    }
+                },
+                x: {
+                    ticks: {
+                        font: { size: 10 },
+                        maxRotation: 45
+                    }
+                }
+            }
+        },
+        plugins: [{
+            id: 'datalabels',
+            afterDatasetsDraw: (chart) => {
+                const { ctx, data } = chart;
+                
+                ctx.save();
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'bottom';
+                ctx.fillStyle = '#333';
+                ctx.font = 'bold 10px Arial';
+                
+                data.datasets.forEach((dataset, datasetIndex) => {
+                    const meta = chart.getDatasetMeta(datasetIndex);
+                    meta.data.forEach((bar, index) => {
+                        const value = dataset.data[index];
+                        if (value > 0) {
+                            const x = bar.x;
+                            const y = bar.y - 8; // Увеличиваем отступ сверху
+                            ctx.fillText(value.toString(), x, y);
+                        }
+                    });
+                });
+                ctx.restore();
+            }
+        }]
+    });
+});
+
 // Автообновление страницы каждые 30 секунд
 setTimeout(function() {
     window.location.reload();
