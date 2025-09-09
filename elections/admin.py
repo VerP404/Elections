@@ -473,7 +473,7 @@ class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
     
     list_display = ['username', 'id', 'get_full_name', 'phone_number', 'role', 'workplace', 'is_active_participant', 'is_active']
     list_filter = ['role', 'is_active_participant', 'is_active', 'workplace']
-    search_fields = ['username', 'first_name', 'last_name', 'phone_number', 'email']
+    search_fields = ['username', 'first_name', 'last_name', 'phone_number', 'email', 'assigned_uiks_as_agitator__number']
     ordering = ['id']
     
     fieldsets = (
@@ -575,7 +575,7 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     resource_class = UIKResource
     import_form_class = ImportForm
     export_form_class = ExportForm
-    list_display = ['number', 'address_short', 'brigadier', 'agitators_count', 'planned_voters_count', 'actual_voters_count', 'voters_difference', 'has_results']
+    list_display = ['number', 'address_short', 'brigadier_display', 'agitators_display', 'planned_voters_count', 'actual_voters_count', 'voters_difference', 'has_results']
     list_filter = ['created_at']
     search_fields = ['number', 'address']
     ordering = ['number']
@@ -602,6 +602,29 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     
     # Кастомные действия
     actions = ['transfer_agitator_voters', 'remove_agitator_safely']
+    
+    def get_form(self, request, obj=None, **kwargs):
+        """Получение формы с фильтрацией агитаторов"""
+        form = super().get_form(request, obj, **kwargs)
+        
+        # Фильтруем агитаторов - убираем уже назначенных на другие УИК
+        if 'agitators' in form.base_fields:
+            agitators_field = form.base_fields['agitators']
+            
+            # Получаем всех агитаторов, которые уже назначены на другие УИК
+            assigned_agitator_ids = set()
+            for uik in UIK.objects.exclude(id=obj.id if obj else None):
+                assigned_agitator_ids.update(uik.agitators.values_list('id', flat=True))
+            
+            # Фильтруем queryset
+            available_agitators = User.objects.filter(
+                role='agitator',
+                is_active_participant=True
+            ).exclude(id__in=assigned_agitator_ids)
+            
+            agitators_field.queryset = available_agitators
+        
+        return form
     
     def save_model(self, request, obj, form, change):
         """Автоматически устанавливаем создателя/редактора"""
@@ -664,9 +687,22 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     def has_results(self, obj):
         return hasattr(obj, 'uikresults')
     
-    @display(description='Агитаторов')
-    def agitators_count(self, obj):
-        return obj.agitators.count()
+    @display(description='Бригадир')
+    def brigadier_display(self, obj):
+        """Отображение бригадира в формате Фамилия И.О."""
+        if obj.brigadier:
+            return obj.brigadier.get_short_name()
+        return '-'
+    
+    @display(description='Агитаторы')
+    def agitators_display(self, obj):
+        """Отображение агитаторов в формате Фамилия И.О. с переносами строк"""
+        if obj.agitators.exists():
+            agitators_list = []
+            for agitator in obj.agitators.all():
+                agitators_list.append(agitator.get_short_name())
+            return format_html('<br>'.join(agitators_list))
+        return '-'
     
     def changelist_view(self, request, extra_context=None):
         """Кастомная обработка changelist с уведомлением о правах"""
@@ -789,9 +825,10 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     
     list_display = ['full_name', 'birth_date_display', 'uik', 'agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
     list_filter = ['voting_method', 'confirmed_by_brigadier', 'uik', 'agitator', 'planned_date', 'voting_date', 'created_at']
-    search_fields = ['last_name', 'first_name', 'middle_name', 'phone_number']
+    search_fields = ['last_name', 'first_name', 'middle_name', 'phone_number', 'uik__number', 'agitator__assigned_uiks_as_agitator__number']
     list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier']
     list_per_page = 50
+    autocomplete_fields = ['agitator']
     
     # Форматы для импорта-экспорта
     formats = [XLSX, CSV]
@@ -935,22 +972,25 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         """Динамические поля в зависимости от роли"""
         base_fields = (
             ('last_name', 'first_name', 'middle_name', 'birth_date'),
-            ('phone_number', 'workplace', 'uik')
+            ('phone_number', 'workplace')
         )
         
         if request.user.role == 'agitator':
             return (
                 ('Персональные данные', {'fields': base_fields}),
                 ('Планирование', {
-                    'fields': ('agitator', 'planned_date'),
-                    'description': 'Вы можете планировать голосование избирателей'
+                    'fields': ('agitator', 'uik', 'planned_date'),
+                    'description': 'Вы можете планировать голосование избирателей. УИК автоматически заполнится при выборе агитатора.'
                 }),
             )
         
         elif request.user.role == 'brigadier':
             return (
                 ('Персональные данные', {'fields': base_fields}),
-                ('Планирование', {'fields': ('agitator', 'planned_date')}),
+                ('Планирование', {
+                    'fields': ('agitator', 'uik', 'planned_date'),
+                    'description': 'УИК автоматически заполнится при выборе агитатора.'
+                }),
                 ('Голосование', {
                     'fields': ('voting_date', 'voting_method', 'confirmed_by_brigadier'),
                     'description': 'Вы можете подтверждать голосование'
@@ -960,7 +1000,10 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         else:  # admin
             return (
                 ('Персональные данные', {'fields': base_fields}),
-                ('Планирование', {'fields': ('agitator', 'planned_date')}),
+                ('Планирование', {
+                    'fields': ('agitator', 'uik', 'planned_date'),
+                    'description': 'УИК автоматически заполнится при выборе агитатора.'
+                }),
                 ('Голосование', {'fields': ('voting_date', 'voting_method', 'confirmed_by_brigadier')}),
             )
     
@@ -1010,6 +1053,24 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             return
         
         super().save_model(request, obj, form, change)
+    
+    def get_form(self, request, obj=None, **kwargs):
+        """Получение формы с дополнительными настройками"""
+        form = super().get_form(request, obj, **kwargs)
+        
+        # Добавляем JavaScript для автоматического заполнения УИК
+        if hasattr(form, 'Media'):
+            if not hasattr(form.Media, 'js'):
+                form.Media.js = []
+            form.Media.js.append('admin/js/voter_admin.js')
+        else:
+            class Media:
+                js = ['admin/js/voter_admin.js']
+            form.Media = Media()
+        
+        
+        return form
+    
     
     def save_related(self, request, form, formsets, change):
         """Сохранение связанных объектов"""

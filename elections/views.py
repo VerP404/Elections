@@ -54,3 +54,22 @@ def get_uik_agitators(request, voter_id):
             'success': False,
             'error': str(e)
         }, status=400)
+
+@login_required(login_url='/admin/login/')
+def get_agitator_uik(request, user_id):
+    """API endpoint для получения УИК агитатора"""
+    try:
+        user = User.objects.get(id=user_id, role='agitator')
+        
+        # Получаем первый УИК, где работает агитатор
+        uik = user.assigned_uiks_as_agitator.first()
+        
+        if uik:
+            return JsonResponse({'uik_id': uik.id, 'uik_number': uik.number})
+        else:
+            return JsonResponse({'error': 'Агитатор не назначен ни на один УИК'}, status=404)
+            
+    except User.DoesNotExist:
+        return JsonResponse({'error': 'Пользователь не найден или не является агитатором'}, status=404)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)

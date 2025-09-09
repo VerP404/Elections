@@ -103,9 +103,20 @@ class User(AbstractUser):
     def get_full_name(self):
         """Полное имя пользователя"""
         return f"{self.last_name} {self.first_name} {self.middle_name}".strip()
+    
+    def get_short_name(self):
+        """Краткое имя в формате Фамилия И.О."""
+        first_initial = self.first_name[0] + '.' if self.first_name else ''
+        middle_initial = self.middle_name[0] + '.' if self.middle_name else ''
+        return f"{self.last_name} {first_initial}{middle_initial}".strip()
 
     def __str__(self):
         """Отображение пользователя с учетом роли"""
+        if self.role == 'agitator':
+            # Для агитаторов показываем УИК
+            uik = self.assigned_uiks_as_agitator.first()
+            uik_info = f" (УИК {uik.number})" if uik else " (не назначен)"
+            return f"{self.get_short_name()}{uik_info}"
         return self.get_full_name()
 
     def get_full_name_with_role(self):
