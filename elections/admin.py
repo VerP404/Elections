@@ -810,6 +810,112 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         extra_context['title'] = 'Избиратели'
         extra_context['subtitle'] = 'Управление избирателями'
         
+        # Обработка POST запроса для массового редактирования
+        if request.method == 'POST':
+            # Получаем данные из POST
+            form_data = request.POST
+            
+            # Собираем все записи для обновления
+            records_to_update = {}
+            
+            # Сначала собираем все данные
+            for key, value in form_data.items():
+                if key.startswith('form-') and '-id' in key:
+                    record_id = value
+                    if record_id:
+                        prefix = key.replace('-id', '')
+                        if record_id not in records_to_update:
+                            records_to_update[record_id] = {'prefix': prefix}
+                        
+                        # Собираем все поля для этой записи
+                        for field_name in ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier']:
+                            field_key = f'{prefix}-{field_name}'
+                            if field_key in form_data:
+                                records_to_update[record_id][field_name] = form_data[field_key]
+            
+            # Счетчики для уведомлений
+            updated_count = 0
+            error_count = 0
+            
+            # Теперь обновляем записи
+            for record_id, data in records_to_update.items():
+                try:
+                    voter = Voter.objects.get(id=record_id)
+                    
+                    # Обновляем все поля
+                    if 'planned_date' in data:
+                        planned_date_str = data['planned_date']
+                        if planned_date_str:
+                            from datetime import datetime
+                            try:
+                                # Пробуем разные форматы дат
+                                try:
+                                    voter.planned_date = datetime.strptime(planned_date_str, '%d.%m.%Y').date()
+                                except ValueError:
+                                    try:
+                                        voter.planned_date = datetime.strptime(planned_date_str, '%Y-%m-%d').date()
+                                    except ValueError:
+                                        pass
+                            except Exception:
+                                pass
+                    
+                    if 'voting_date' in data:
+                        voting_date_str = data['voting_date']
+                        if voting_date_str:
+                            from datetime import datetime
+                            try:
+                                # Пробуем разные форматы дат
+                                try:
+                                    voter.voting_date = datetime.strptime(voting_date_str, '%d.%m.%Y').date()
+                                except ValueError:
+                                    try:
+                                        voter.voting_date = datetime.strptime(voting_date_str, '%Y-%m-%d').date()
+                                    except ValueError:
+                                        voter.voting_date = None
+                            except Exception:
+                                voter.voting_date = None
+                        else:
+                            voter.voting_date = None
+                    
+                    if 'voting_method' in data:
+                        voter.voting_method = data['voting_method']
+                    
+                    if 'confirmed_by_brigadier' in data:
+                        voter.confirmed_by_brigadier = True
+                    else:
+                        voter.confirmed_by_brigadier = False
+                    
+                    # Сохраняем запрос для валидации
+                    voter._request = request
+                    
+                    # Вызываем валидацию и сохраняем
+                    try:
+                        voter.clean()
+                        voter.save()
+                        updated_count += 1
+                    except ValidationError as e:
+                        error_count += 1
+                        from django.contrib import messages
+                        for field, errors in e.message_dict.items():
+                            for error in errors:
+                                messages.error(request, f"Запись {voter.get_full_name()}: {field}: {error}")
+                    
+                except Voter.DoesNotExist:
+                    error_count += 1
+                except Exception as e:
+                    error_count += 1
+                    from django.contrib import messages
+                    messages.error(request, f"Ошибка при сохранении записи: {str(e)}")
+            
+            # Показываем итоговые уведомления
+            from django.contrib import messages
+            if updated_count > 0:
+                messages.success(request, f"Успешно обновлено записей: {updated_count}")
+            if error_count > 0:
+                messages.warning(request, f"Записей с ошибками: {error_count}")
+            if updated_count == 0 and error_count == 0:
+                messages.info(request, "Нет изменений для сохранения")
+        
         return super().changelist_view(request, extra_context)
     
     
@@ -872,7 +978,27 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         """Сохранение с проверкой прав"""
         # Сохраняем запрос для валидации
         obj._request = request
+        
+        # Вызываем валидацию модели
+        try:
+            obj.clean()
+        except ValidationError as e:
+            # Если есть ошибки валидации, показываем их пользователю
+            from django.contrib import messages
+            for field, errors in e.message_dict.items():
+                for error in errors:
+                    messages.error(request, f"{field}: {error}")
+            return
+        
         super().save_model(request, obj, form, change)
+    
+    def save_related(self, request, form, formsets, change):
+        """Сохранение связанных объектов"""
+        super().save_related(request, form, formsets, change)
+    
+    def response_change(self, request, obj):
+        """Обработка ответа после изменения объекта"""
+        return super().response_change(request, obj)
     
     def clean(self):
         """Валидация в зависимости от роли пользователя"""
