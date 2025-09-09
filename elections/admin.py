@@ -9,6 +9,7 @@ from django.shortcuts import render
 from unfold.admin import ModelAdmin, TabularInline
 from unfold.decorators import display
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
+from unfold.sections import TableSection
 from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 from import_export.formats.base_formats import XLSX, CSV, XLS
@@ -18,7 +19,53 @@ from django.core.exceptions import ValidationError
 from django.contrib import messages
 from django.http import HttpResponseRedirect
 
-from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, Analytics, PlannedVoter, VotingRecord
+from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, UIKResultsDaily, Analytics, PlannedVoter, VotingRecord
+
+
+# Секции для Unfold
+class VotingRecordSection(TableSection):
+    """Секция для отображения записей голосования избирателя"""
+    verbose_name = "Записи о голосовании"
+    height = 200
+    related_name = "plannedvoter_set"
+    fields = ["voting_date", "voting_method", "confirmed_by_brigadier", "actions"]
+    
+    def voting_date(self, instance):
+        """Дата голосования"""
+        if hasattr(instance, 'votingrecord') and instance.votingrecord:
+            if instance.votingrecord.voting_date:
+                return instance.votingrecord.voting_date.strftime('%d.%m.%Y')
+        return "Не указана"
+    voting_date.short_description = "Дата голосования"
+    
+    def voting_method(self, instance):
+        """Способ голосования"""
+        if hasattr(instance, 'votingrecord') and instance.votingrecord:
+            method_choices = {
+                'at_uik': 'В УИК',
+                'at_home': 'На дому'
+            }
+            return method_choices.get(instance.votingrecord.voting_method, instance.votingrecord.voting_method or "Не указан")
+        return "Не указан"
+    voting_method.short_description = "Способ голосования"
+    
+    def confirmed_by_brigadier(self, instance):
+        """Подтверждено бригадиром"""
+        if hasattr(instance, 'votingrecord') and instance.votingrecord:
+            if instance.votingrecord.confirmed_by_brigadier:
+                return format_html('<span style="color: green;">✓ Да</span>')
+            else:
+                return format_html('<span style="color: red;">❌ Нет</span>')
+        return format_html('<span style="color: gray;">—</span>')
+    confirmed_by_brigadier.short_description = "Подтверждено бригадиром"
+    
+    def actions(self, instance):
+        """Действия"""
+        if hasattr(instance, 'votingrecord') and instance.votingrecord and instance.votingrecord.pk:
+            url = reverse('admin:elections_votingrecord_change', args=[instance.votingrecord.pk])
+            return format_html('<a href="{}" target="_blank" style="color: #007bff; text-decoration: none;">Открыть</a>', url)
+        return "—"
+    actions.short_description = "Действия"
 
 
 # Перерегистрируем стандартную модель Group с нашим стилем
@@ -42,26 +89,129 @@ class GroupAdmin(BaseGroupAdmin, ModelAdmin):
 
 
 # Ресурсы для импорта-экспорта
+class UserResource(resources.ModelResource):
+    """Ресурс для импорта-экспорта пользователей"""
+    
+    class Meta:
+        model = User
+        fields = (
+            'id', 'username', 'last_name', 'first_name', 'middle_name', 
+            'phone_number', 'email', 'role', 'workplace', 
+            'is_active_participant', 'is_active'
+        )
+        export_order = (
+            'id', 'username', 'last_name', 'first_name', 'middle_name', 
+            'phone_number', 'email', 'role', 'workplace', 
+            'is_active_participant', 'is_active'
+        )
+        import_id_fields = ('username',)  # Уникальное поле для импорта
+        skip_unchanged = True
+        report_skipped = True
+        
+    def get_export_headers(self, selected_fields=None):
+        """Русские заголовки для экспорта"""
+        if selected_fields is not None:
+            return super().get_export_headers(selected_fields=selected_fields)
+        return [
+            'ID', 'Логин', 'Фамилия', 'Имя', 'Отчество', 'Телефон', 'Email',
+            'Роль', 'Место работы', 'Активный участник', 'Активен'
+        ]
+    
+    def before_import_row(self, row, **kwargs):
+        """Валидация перед импортом строки"""
+        # Проверяем обязательные поля
+        if not row.get('username'):
+            raise ValidationError("Логин обязателен")
+        if not row.get('last_name'):
+            raise ValidationError("Фамилия обязательна")
+        if not row.get('first_name'):
+            raise ValidationError("Имя обязательно")
+        if not row.get('phone_number'):
+            raise ValidationError("Телефон обязателен")
+        
+        # Валидация роли
+        role = row.get('role', '').lower()
+        valid_roles = ['admin', 'brigadier', 'agitator', 'operator', 'analyst']
+        if role not in valid_roles:
+            raise ValidationError(f"Роль должна быть одной из: {', '.join(valid_roles)}")
+        
+        # Валидация телефона
+        phone = row.get('phone_number', '')
+        if phone and (not str(phone).startswith('8') or len(str(phone)) != 11):
+            raise ValidationError("Телефон должен быть в формате 8XXXXXXXXXX")
+        
+        # Обработка места работы
+        workplace_value = row.get('workplace', '')
+        if workplace_value:
+            # Если это число (ID), оставляем как есть
+            if str(workplace_value).isdigit():
+                try:
+                    workplace = Workplace.objects.get(id=int(workplace_value))
+                    row['workplace'] = workplace.id
+                except Workplace.DoesNotExist:
+                    raise ValidationError(f"Место работы с ID '{workplace_value}' не найдено в базе данных")
+            else:
+                # Если это строка (название), ищем по названию
+                try:
+                    workplace = Workplace.objects.get(name=workplace_value)
+                    row['workplace'] = workplace.id
+                except Workplace.DoesNotExist:
+                    raise ValidationError(f"Место работы '{workplace_value}' не найдено в базе данных")
+    
+    def before_save_instance(self, instance, row, **kwargs):
+        """Обработка перед сохранением"""
+        # Устанавливаем пароль по умолчанию если не задан
+        if not instance.password or instance.password == '':
+            instance.set_password('password123')  # Пароль по умолчанию
+        
+        # Устанавливаем активность по умолчанию
+        if instance.is_active is None:
+            instance.is_active = True
+        if instance.is_active_participant is None:
+            instance.is_active_participant = True
+            
+        return instance
+
+
 class WorkplaceResource(resources.ModelResource):
     """Ресурс для импорта-экспорта мест работы"""
     
     class Meta:
         model = Workplace
-        fields = ('id', 'name', 'created_at')
-        export_order = ('id', 'name', 'created_at')
+        fields = ('id', 'name', 'group', 'created_at')
+        export_order = ('id', 'name', 'group', 'created_at')
         import_id_fields = ('name',)  # Уникальное поле для импорта
         skip_unchanged = True
         report_skipped = True
         
-    # Удалена проверка на дублирование — теперь записи будут обновляться по name
-    
     def get_export_headers(self, selected_fields=None):
         """Русские заголовки для экспорта"""
-        # selected_fields нужен для совместимости с import-export >= 3.0
         if selected_fields is not None:
-            # Используем стандартную обработку, если выбранные поля заданы
             return super().get_export_headers(selected_fields=selected_fields)
-        return ['ID', 'Название организации', 'Дата создания']
+        return ['ID', 'Название организации', 'Группа', 'Дата создания']
+    
+    def before_import_row(self, row, **kwargs):
+        """Валидация перед импортом строки"""
+        # Проверяем обязательные поля
+        if not row.get('name'):
+            raise ValidationError("Название организации обязательно")
+        
+        # Валидация группы
+        group = row.get('group', '').lower()
+        valid_groups = ['medicine', 'education', 'social_protection', 'agitators', 'other']
+        if group and group not in valid_groups:
+            raise ValidationError(f"Группа должна быть одной из: {', '.join(valid_groups)}")
+        
+        # Если группа не указана, устанавливаем по умолчанию
+        if not group:
+            row['group'] = 'other'
+    
+    def before_save_instance(self, instance, row, **kwargs):
+        """Обработка перед сохранением"""
+        # Устанавливаем группу по умолчанию если не задана
+        if not instance.group:
+            instance.group = 'other'
+        return instance
 
 
 class UIKResource(resources.ModelResource):
@@ -69,19 +219,78 @@ class UIKResource(resources.ModelResource):
     
     class Meta:
         model = UIK
-        fields = ('id', 'number', 'address', 'planned_voters_count', 'created_at')
-        export_order = ('id', 'number', 'address', 'planned_voters_count', 'created_at')
+        fields = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators')
+        export_order = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators')
         import_id_fields = ('number',)  # Уникальное поле для импорта
         skip_unchanged = True
         report_skipped = True
         
-    # Удалена проверка на дублирование — теперь записи будут обновляться по number
-    
     def get_export_headers(self, selected_fields=None):
         """Русские заголовки для экспорта"""
         if selected_fields is not None:
             return super().get_export_headers(selected_fields=selected_fields)
-        return ['ID', 'Номер УИК', 'Адрес', 'Плановое количество избирателей', 'Дата создания']
+        return ['ID', 'Номер УИК', 'Адрес', 'Плановое количество избирателей', 'Бригадир', 'Агитаторы', 'Дата создания']
+    
+    def before_import_row(self, row, **kwargs):
+        """Валидация перед импортом строки"""
+        # Проверяем обязательные поля
+        if not row.get('number'):
+            raise ValidationError("Номер УИК обязателен")
+        if not row.get('address'):
+            raise ValidationError("Адрес обязателен")
+        
+        # Обработка бригадира
+        brigadier_value = row.get('brigadier', '')
+        if brigadier_value:
+            # Если это число (ID), оставляем как есть
+            if str(brigadier_value).isdigit():
+                try:
+                    brigadier = User.objects.get(id=int(brigadier_value), role='brigadier')
+                    row['brigadier'] = brigadier.id
+                except User.DoesNotExist:
+                    raise ValidationError(f"Бригадир с ID '{brigadier_value}' не найден или не является бригадиром")
+            else:
+                # Если это строка (логин), ищем по логину
+                try:
+                    brigadier = User.objects.get(username=brigadier_value, role='brigadier')
+                    row['brigadier'] = brigadier.id
+                except User.DoesNotExist:
+                    raise ValidationError(f"Бригадир с логином '{brigadier_value}' не найден или не является бригадиром")
+        
+        # Обработка агитаторов (через запятую)
+        agitators_value = row.get('agitators', '')
+        if agitators_value:
+            agitator_ids = []
+            # Разделяем по запятой
+            agitator_identifiers = [x.strip() for x in str(agitators_value).split(',') if x.strip()]
+            
+            for identifier in agitator_identifiers:
+                # Если это число (ID), ищем по ID
+                if str(identifier).isdigit():
+                    try:
+                        agitator = User.objects.get(id=int(identifier), role='agitator')
+                        agitator_ids.append(agitator.id)
+                    except User.DoesNotExist:
+                        raise ValidationError(f"Агитатор с ID '{identifier}' не найден или не является агитатором")
+                else:
+                    # Если это строка (логин), ищем по логину
+                    try:
+                        agitator = User.objects.get(username=identifier, role='agitator')
+                        agitator_ids.append(agitator.id)
+                    except User.DoesNotExist:
+                        raise ValidationError(f"Агитатор с логином '{identifier}' не найден или не является агитатором")
+            
+            row['agitators'] = ','.join(map(str, agitator_ids))
+    
+    def before_save_instance(self, instance, row, **kwargs):
+        """Обработка перед сохранением"""
+        # Обрабатываем агитаторов после создания/обновления УИК
+        agitators_value = row.get('agitators', '')
+        if agitators_value:
+            agitator_ids = [int(x) for x in str(agitators_value).split(',') if x.strip()]
+            instance.agitators.set(agitator_ids)
+        
+        return instance
 
 
 class VoterResource(resources.ModelResource):
@@ -103,18 +312,24 @@ class VoterResource(resources.ModelResource):
 
 
 @admin.register(User)
-class UserAdmin(BaseUserAdmin, ModelAdmin):
-    """Админка для пользователей с ролями"""
+class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
+    """Админка для пользователей с ролями и импортом/экспортом"""
+    
+    # Ресурс для импорта/экспорта
+    resource_class = UserResource
     
     # Формы Unfold для правильного стилизования
     form = UserChangeForm
     add_form = UserCreationForm
     change_password_form = AdminPasswordChangeForm
     
-    list_display = ['username', 'get_full_name', 'phone_number', 'role', 'workplace', 'is_active_participant', 'is_active']
+    # Форматы для импорта-экспорта
+    formats = [XLSX, CSV]
+    
+    list_display = ['username', 'id', 'get_full_name', 'phone_number', 'role', 'workplace', 'is_active_participant', 'is_active']
     list_filter = ['role', 'is_active_participant', 'is_active', 'workplace']
     search_fields = ['username', 'first_name', 'last_name', 'phone_number', 'email']
-    ordering = ['username']
+    ordering = ['id']
     
     fieldsets = (
         ('Основная информация', {
@@ -331,7 +546,7 @@ class WorkplaceAdmin(ImportExportModelAdmin, ModelAdmin):
     """Админка для мест работы с импортом-экспортом"""
     
     resource_class = WorkplaceResource
-    list_display = ['name', 'workers_count', 'created_at']
+    list_display = ['name', 'id', 'group', 'workers_count', 'created_at']
     list_filter = ['created_at']
     search_fields = ['name']
     ordering = ['name']
@@ -432,6 +647,12 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     ordering = ['last_name', 'first_name']
     readonly_fields = ['created_by', 'updated_by', 'created_at', 'updated_at', 'age_display']
     
+    # Секции для отображения связанных данных
+    list_sections = [VotingRecordSection]
+    
+    # Оптимизация запросов для секций
+    list_per_page = 20
+    
     # Форматы для импорта-экспорта
     formats = [XLSX, CSV]
     
@@ -499,28 +720,34 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         
         # Админ видит все записи
         if request.user.is_superuser or request.user.role == 'admin':
-            return qs
-        
+            qs = qs
         # Бригадир видит избирателей своего УИК
         elif request.user.role == 'brigadier':
             uik = UIK.objects.filter(brigadier=request.user).first()
             if uik:
-                return qs.filter(uik=uik)
-            return qs.none()
-        
+                qs = qs.filter(uik=uik)
+            else:
+                qs = qs.none()
         # Агитатор видит избирателей своего УИК
         elif request.user.role == 'agitator':
             uik = UIK.objects.filter(agitators=request.user).first()
             if uik:
-                return qs.filter(uik=uik)
-            return qs.none()
-        
+                qs = qs.filter(uik=uik)
+            else:
+                qs = qs.none()
         # Оператор видит всех избирателей
         elif request.user.role == 'operator':
-            return qs
-        
+            qs = qs
         # По умолчанию - только свои записи
-        return qs.filter(created_by=request.user)
+        else:
+            qs = qs.filter(created_by=request.user)
+        
+        # Оптимизация запросов для секций
+        return qs.prefetch_related(
+            'plannedvoter_set__votingrecord',
+            'uik',
+            'workplace'
+        )
 
     def has_change_permission(self, request, obj=None):
         # Админ может изменять все
@@ -640,10 +867,10 @@ class UIKResultsAdmin(ImportExportModelAdmin, ModelAdmin):
     
     list_display = [
         'uik', 'planned_voters_count', 'confirmed_voters_count', 'confirmed_percent',
-        'ballot_box_votes', 'koib_votes', 'independent_votes',
-        'total_votes', 'ballot_box_percentage', 'koib_percentage', 'independent_percentage'
+        'at_uik_votes', 'at_home_votes',
+        'total_votes', 'at_uik_percentage', 'at_home_percentage'
     ]
-    list_editable = ['ballot_box_votes', 'koib_votes', 'independent_votes']  # Редактирование прямо в списке
+    list_editable = ['at_uik_votes', 'at_home_votes']  # Редактирование прямо в списке
     list_filter = ['uik__number', 'updated_at']
     search_fields = ['uik__number', 'uik__address']
     ordering = ['uik__number']
@@ -659,7 +886,7 @@ class UIKResultsAdmin(ImportExportModelAdmin, ModelAdmin):
         }),
         ('Результаты голосования', {
             'fields': (
-                ('ballot_box_votes', 'koib_votes', 'independent_votes'),
+                ('at_uik_votes', 'at_home_votes'),
             )
         }),
         ('Статистика (только для чтения)', {
@@ -712,17 +939,13 @@ class UIKResultsAdmin(ImportExportModelAdmin, ModelAdmin):
     def total_votes(self, obj):
         return obj.total_votes
     
-    @display(description='Урна %')
-    def ballot_box_percentage(self, obj):
-        return f"{obj.ballot_box_percentage}%"
+    @display(description='В УИК %')
+    def at_uik_percentage(self, obj):
+        return f"{obj.at_uik_percentage}%"
     
-    @display(description='КОИБ %')
-    def koib_percentage(self, obj):
-        return f"{obj.koib_percentage}%"
-    
-    @display(description='Самост. %')
-    def independent_percentage(self, obj):
-        return f"{obj.independent_percentage}%"
+    @display(description='На дому %')
+    def at_home_percentage(self, obj):
+        return f"{obj.at_home_percentage}%"
     
     @display(description='Количество учтенных избирателей')
     def confirmed_voters_display(self, obj):
@@ -742,12 +965,10 @@ class UIKResultsAdmin(ImportExportModelAdmin, ModelAdmin):
     @display(description='Проценты')
     def percentages_display(self, obj):
         return format_html(
-            "Урна: <strong>{}%</strong><br>"
-            "КОИБ: <strong>{}%</strong><br>"
-            "Самостоятельно: <strong>{}%</strong>",
-            obj.ballot_box_percentage,
-            obj.koib_percentage,
-            obj.independent_percentage
+            "В УИК: <strong>{}%</strong><br>"
+            "На дому: <strong>{}%</strong>",
+            obj.at_uik_percentage,
+            obj.at_home_percentage
         )
 
 
@@ -1486,9 +1707,8 @@ class VotingRecordAdmin(ModelAdmin):
             voting_method = forms.ChoiceField(
                 label='Способ голосования',
                 choices=[
-                    ('ballot_box', 'Урна'),
-                    ('koib', 'КОИБ'),
-                    ('independent', 'Самостоятельно'),
+                    ('at_uik', 'В УИК'),
+                    ('at_home', 'На дому'),
                 ]
             )
         
@@ -1578,3 +1798,334 @@ class VotingRecordAdmin(ModelAdmin):
 OPERATORS_GROUP = 'Операторы избирателей'
 def is_operators_user(user):
     return user.groups.filter(name=OPERATORS_GROUP).exists()
+
+
+@admin.register(UIKResultsDaily)
+class UIKResultsDailyAdmin(ImportExportModelAdmin, ModelAdmin):
+    """Админка для результатов по дням УИК с редактированием в списке"""
+    
+    list_display = [
+        'uik', 'total_plan', 'total_fact', 'plan_execution_percentage',
+        'separator_1',
+        'plan_12_sep', 'fact_12_sep', 'fact_12_sep_calculated', 'fact_12_sep_locked', 'plan_12_percent',
+        'separator_2',
+        'plan_13_sep', 'fact_13_sep', 'fact_13_sep_calculated', 'fact_13_sep_locked', 'plan_13_percent', 
+        'separator_3',
+        'plan_14_sep', 'fact_14_sep', 'fact_14_sep_calculated', 'fact_14_sep_locked', 'plan_14_percent'
+    ]
+    list_editable = [
+        'plan_12_sep', 'plan_13_sep', 'plan_14_sep', 
+        'fact_12_sep', 'fact_13_sep', 'fact_14_sep',
+        'fact_12_sep_locked', 'fact_13_sep_locked', 'fact_14_sep_locked'
+    ]  # Редактирование прямо в списке
+    list_filter = ['uik__number', 'updated_at']
+    search_fields = ['uik__number', 'uik__address']
+    ordering = ['uik__number']
+    readonly_fields = ['total_fact', 'plan_execution_percentage', 'plan_12_percent', 'plan_13_percent', 'plan_14_percent', 'fact_12_sep_calculated', 'fact_13_sep_calculated', 'fact_14_sep_calculated', 'separator_1', 'separator_2', 'separator_3', 'created_by', 'updated_by', 'created_at', 'updated_at']
+    
+    # Группировка полей для удобства редактирования
+    fieldsets = (
+        ('УИК', {
+            'fields': ('uik',)
+        }),
+        ('Планы по дням', {
+            'fields': (
+                ('plan_12_sep', 'plan_13_sep', 'plan_14_sep'),
+            ),
+            'description': 'Плановое количество голосов по дням голосования'
+        }),
+        ('Факты по дням (ручные)', {
+            'fields': (
+                ('fact_12_sep', 'fact_13_sep', 'fact_14_sep'),
+            ),
+            'description': 'Фактическое количество голосов по дням голосования (ручное введение)'
+        }),
+        ('Расчетные факты (только для чтения)', {
+            'fields': (
+                ('fact_12_sep_calculated', 'fact_13_sep_calculated', 'fact_14_sep_calculated'),
+            ),
+            'description': 'Автоматически рассчитываемые факты по дням',
+            'classes': ('collapse',)
+        }),
+        ('Управление фактами 12.09', {
+            'fields': (
+                ('fact_12_sep_locked', 'fact_12_sep_source'),
+            ),
+            'description': 'Настройки для 12 сентября',
+            'classes': ('collapse',)
+        }),
+        ('Управление фактами 13.09', {
+            'fields': (
+                ('fact_13_sep_locked', 'fact_13_sep_source'),
+            ),
+            'description': 'Настройки для 13 сентября',
+            'classes': ('collapse',)
+        }),
+        ('Управление фактами 14.09', {
+            'fields': (
+                ('fact_14_sep_locked', 'fact_14_sep_source'),
+            ),
+            'description': 'Настройки для 14 сентября',
+            'classes': ('collapse',)
+        }),
+    )
+    
+    formats = [XLSX, CSV]
+
+    def save_model(self, request, obj, form, change):
+        """Автоматически устанавливаем создателя/редактора"""
+        if not change:
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+    
+    def has_view_permission(self, request, obj=None):
+        """Разрешения на просмотр"""
+        return request.user.has_perm('elections.view_uikresultsdaily')
+    
+    def has_add_permission(self, request):
+        """Запрещаем ручное добавление - создается автоматически при создании УИК"""
+        return False
+    
+    def has_change_permission(self, request, obj=None):
+        """Разрешение на изменение"""
+        return request.user.has_perm('elections.change_uikresultsdaily')
+    
+    def has_delete_permission(self, request, obj=None):
+        """Разрешение на удаление"""
+        return request.user.has_perm('elections.delete_uikresultsdaily')
+    
+    @display(description='План 12.09')
+    def plan_12_sep_display(self, obj):
+        return format_html('<strong style="color: orange;">{}</strong>', obj.plan_12_sep)
+    
+    @display(description='План 13.09')
+    def plan_13_sep_display(self, obj):
+        return format_html('<strong style="color: orange;">{}</strong>', obj.plan_13_sep)
+    
+    @display(description='План 14.09')
+    def plan_14_sep_display(self, obj):
+        return format_html('<strong style="color: orange;">{}</strong>', obj.plan_14_sep)
+    
+    
+    @display(description='План')
+    def total_plan(self, obj):
+        return format_html('<strong style="color: orange;">{}</strong>', obj.total_plan)
+    
+    @display(description='Факт')
+    def total_fact(self, obj):
+        return format_html('<strong style="color: green;">{}</strong>', obj.total_fact)
+    
+    @display(description='%')
+    def plan_execution_percentage(self, obj):
+        percent = obj.plan_execution_percentage
+        if percent >= 100:
+            color = 'green'
+        elif percent >= 80:
+            color = 'orange'
+        else:
+            color = 'red'
+        return format_html('<span style="color: {};"><strong>{}%</strong></span>', color, percent)
+    
+    @display(description='Общий план')
+    def total_plan_display(self, obj):
+        return f"{obj.total_plan} голосов"
+    
+    @display(description='Общий факт')
+    def total_fact_display(self, obj):
+        return f"{obj.total_fact} голосов"
+    
+    @display(description='')
+    def separator_1(self, obj):
+        return format_html('<div style="border-left: 3px solid #ddd; height: 30px; margin: 0 8px; background: #f8f9fa;"></div>')
+    
+    @display(description='')
+    def separator_2(self, obj):
+        return format_html('<div style="border-left: 3px solid #ddd; height: 30px; margin: 0 8px; background: #f8f9fa;"></div>')
+    
+    @display(description='')
+    def separator_3(self, obj):
+        return format_html('<div style="border-left: 3px solid #ddd; height: 30px; margin: 0 8px; background: #f8f9fa;"></div>')
+    
+    @display(description='% 12.09')
+    def plan_12_percent(self, obj):
+        effective_fact = obj.get_effective_fact_12_sep()
+        percent = round((effective_fact / obj.plan_12_sep * 100), 1) if obj.plan_12_sep > 0 else 0
+        if percent >= 100:
+            color = 'green'
+        elif percent >= 80:
+            color = 'orange'
+        else:
+            color = 'red'
+        return format_html('<span style="color: {};"><strong>{}%</strong></span>', color, percent)
+    
+    @display(description='% 13.09')
+    def plan_13_percent(self, obj):
+        effective_fact = obj.get_effective_fact_13_sep()
+        percent = round((effective_fact / obj.plan_13_sep * 100), 1) if obj.plan_13_sep > 0 else 0
+        if percent >= 100:
+            color = 'green'
+        elif percent >= 80:
+            color = 'orange'
+        else:
+            color = 'red'
+        return format_html('<span style="color: {};"><strong>{}%</strong></span>', color, percent)
+    
+    @display(description='% 14.09')
+    def plan_14_percent(self, obj):
+        effective_fact = obj.get_effective_fact_14_sep()
+        percent = round((effective_fact / obj.plan_14_sep * 100), 1) if obj.plan_14_sep > 0 else 0
+        if percent >= 100:
+            color = 'green'
+        elif percent >= 80:
+            color = 'orange'
+        else:
+            color = 'red'
+        return format_html('<span style="color: {};"><strong>{}%</strong></span>', color, percent)
+    
+    @display(description='Расчетный 12.09')
+    def fact_12_sep_calculated_display(self, obj):
+        return format_html('<strong style="color: blue;">{}</strong>', obj.fact_12_sep_calculated)
+    
+    @display(description='Расчетный 13.09')
+    def fact_13_sep_calculated_display(self, obj):
+        return format_html('<strong style="color: blue;">{}</strong>', obj.fact_13_sep_calculated)
+    
+    @display(description='Расчетный 14.09')
+    def fact_14_sep_calculated_display(self, obj):
+        return format_html('<strong style="color: blue;">{}</strong>', obj.fact_14_sep_calculated)
+    
+    @display(description='Процент выполнения')
+    def plan_execution_percentage_display(self, obj):
+        return format_html(
+            "Общий: <strong>{}%</strong><br>"
+            "12.09: <strong>{} голосов</strong><br>"
+            "13.09: <strong>{} голосов</strong><br>"
+            "14.09: <strong>{} голосов</strong>",
+            obj.plan_execution_percentage,
+            obj.fact_12_sep,
+            obj.fact_13_sep,
+            obj.fact_14_sep
+        )
+    
+    def get_queryset(self, request):
+        """Фильтруем записи в зависимости от роли пользователя"""
+        qs = super().get_queryset(request)
+        
+        # Админы видят все записи
+        if request.user.is_superuser or request.user.role == 'admin':
+            return qs
+        
+        # Бригадиры видят только свои УИК
+        if request.user.role == 'brigadier':
+            return qs.filter(uik__brigadier=request.user)
+        
+        # Агитаторы видят только УИК где они работают
+        if request.user.role == 'agitator':
+            return qs.filter(uik__agitators=request.user)
+        
+        # Остальные роли не видят ничего
+        return qs.none()
+    
+    def has_change_permission(self, request, obj=None):
+        # Админы могут изменять все
+        if request.user.is_superuser or request.user.role == 'admin':
+            return True
+        
+        # Бригадиры могут изменять только свои УИК
+        if request.user.role == 'brigadier' and obj:
+            return obj.uik.brigadier == request.user
+        
+        # Агитаторы могут изменять только УИК где они работают
+        if request.user.role == 'agitator' and obj:
+            return obj.uik.agitators.filter(id=request.user.id).exists()
+        
+        return False
+    
+    def has_delete_permission(self, request, obj=None):
+        # Только админы могут удалять
+        return request.user.is_superuser or request.user.role == 'admin'
+    
+    def save_model(self, request, obj, form, change):
+        """Автоматически заполняем поля created_by и updated_by и перезаписываем факты"""
+        if not change:  # Создание новой записи
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        
+        # Сохраняем объект
+        super().save_model(request, obj, form, change)
+        
+        # Перезаписываем fact_XX_sep на эффективные значения если не заблокировано
+        if not obj.fact_12_sep_locked:
+            obj.fact_12_sep = max(obj.fact_12_sep, obj.fact_12_sep_calculated)
+        if not obj.fact_13_sep_locked:
+            obj.fact_13_sep = max(obj.fact_13_sep, obj.fact_13_sep_calculated)
+        if not obj.fact_14_sep_locked:
+            obj.fact_14_sep = max(obj.fact_14_sep, obj.fact_14_sep_calculated)
+        
+        # Сохраняем обновленные значения
+        obj.save(update_fields=['fact_12_sep', 'fact_13_sep', 'fact_14_sep'])
+    
+    # Действия для массовых операций
+    actions = ['recalculate_daily_facts', 'recalculate_all_daily_facts']
+    
+    def get_changelist_form(self, request, **kwargs):
+        """Кастомная форма для changelist с перезаписью fact_XX_sep на эффективные значения"""
+        form = super().get_changelist_form(request, **kwargs)
+        
+        # Переопределяем метод save для формы
+        original_save = form.save
+        
+        def custom_save(*args, **kwargs):
+            commit = kwargs.get('commit', True)
+            instance = original_save(*args, **kwargs)
+            if commit and instance:
+                # Перезаписываем fact_XX_sep на эффективные значения если не заблокировано
+                if not instance.fact_12_sep_locked:
+                    instance.fact_12_sep = max(instance.fact_12_sep, instance.fact_12_sep_calculated)
+                if not instance.fact_13_sep_locked:
+                    instance.fact_13_sep = max(instance.fact_13_sep, instance.fact_13_sep_calculated)
+                if not instance.fact_14_sep_locked:
+                    instance.fact_14_sep = max(instance.fact_14_sep, instance.fact_14_sep_calculated)
+                
+                # Сохраняем обновленные значения
+                instance.save(update_fields=['fact_12_sep', 'fact_13_sep', 'fact_14_sep'])
+            return instance
+        
+        form.save = custom_save
+        return form
+    
+    @admin.action(description='Пересчитать факты для выбранных УИК')
+    def recalculate_daily_facts(self, request, queryset):
+        """Пересчитать расчетные факты для выбранных УИК"""
+        updated = 0
+        for instance in queryset:
+            instance.recalculate_all()
+            updated += 1
+        
+        self.message_user(
+            request, 
+            f'Пересчитано {updated} записей UIKResultsDaily'
+        )
+    
+    @admin.action(description='Пересчитать все факты в системе')
+    def recalculate_all_daily_facts(self, request, queryset):
+        """Пересчитать все расчетные факты в системе"""
+        from django.core.management import call_command
+        from io import StringIO
+        import sys
+        
+        # Перенаправляем вывод команды
+        old_stdout = sys.stdout
+        sys.stdout = StringIO()
+        
+        try:
+            call_command('recalculate_all_daily_facts')
+            output = sys.stdout.getvalue()
+        finally:
+            sys.stdout = old_stdout
+        
+        self.message_user(
+            request, 
+            f'Выполнен пересчет всех фактов: {output}'
+        )

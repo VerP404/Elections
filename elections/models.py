@@ -5,6 +5,7 @@ from django.utils import timezone
 from decimal import Decimal
 from django.core.exceptions import ValidationError
 from django.core.validators import RegexValidator
+from datetime import date
 
 
 class User(AbstractUser):
@@ -167,6 +168,11 @@ class UIK(models.Model):
         """Разница между плановым и фактическим количеством"""
         return self.actual_voters_count - self.planned_voters_count
     
+    @property
+    def agitators_display(self):
+        """Отображение агитаторов для экспорта"""
+        return ', '.join([agitator.get_full_name() for agitator in self.agitators.all()])
+    
     def clean(self):
         """Валидация модели"""
         super().clean()
@@ -236,7 +242,21 @@ class UIK(models.Model):
 class Workplace(models.Model):
     """Справочник мест работы"""
     
+    GROUP_CHOICES = [
+        ('medicine', 'Медицина'),
+        ('education', 'Образование'),
+        ('social_protection', 'Соцзащита'),
+        ('agitators', 'Агитаторы'),
+        ('other', 'Прочие'),
+    ]
+    
     name = models.CharField('Название организации', max_length=255, unique=True)
+    group = models.CharField(
+        'Группа',
+        max_length=20,
+        choices=GROUP_CHOICES,
+        default='other'
+    )
     created_at = models.DateTimeField('Дата создания', auto_now_add=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Создал', related_name='created_workplaces')
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Изменил', related_name='updated_workplaces')
@@ -298,9 +318,8 @@ class UIKResults(models.Model):
     uik = models.OneToOneField(UIK, on_delete=models.CASCADE, verbose_name='УИК', primary_key=True)
     
     # Результаты голосования
-    ballot_box_votes = models.PositiveIntegerField('Урна', default=0)
-    koib_votes = models.PositiveIntegerField('КОИБ', default=0)
-    independent_votes = models.PositiveIntegerField('Самостоятельно', default=0)
+    at_uik_votes = models.PositiveIntegerField('В УИК', default=0)
+    at_home_votes = models.PositiveIntegerField('На дому', default=0)
     
     created_at = models.DateTimeField('Дата создания', auto_now_add=True)
     updated_at = models.DateTimeField('Дата обновления', auto_now=True)
@@ -315,7 +334,7 @@ class UIKResults(models.Model):
     
     @property
     def total_votes(self):
-        return self.ballot_box_votes + self.koib_votes + self.independent_votes
+        return self.at_uik_votes + self.at_home_votes
     
     @property
     def confirmed_voters_count(self):
@@ -327,22 +346,16 @@ class UIKResults(models.Model):
         ).count()
     
     @property
-    def ballot_box_percentage(self):
+    def at_uik_percentage(self):
         if self.total_votes == 0:
             return Decimal('0.00')
-        return round(Decimal(self.ballot_box_votes) / Decimal(self.total_votes) * 100, 2)
+        return round(Decimal(self.at_uik_votes) / Decimal(self.total_votes) * 100, 2)
     
     @property
-    def koib_percentage(self):
+    def at_home_percentage(self):
         if self.total_votes == 0:
             return Decimal('0.00')
-        return round(Decimal(self.koib_votes) / Decimal(self.total_votes) * 100, 2)
-    
-    @property
-    def independent_percentage(self):
-        if self.total_votes == 0:
-            return Decimal('0.00')
-        return round(Decimal(self.independent_votes) / Decimal(self.total_votes) * 100, 2)
+        return round(Decimal(self.at_home_votes) / Decimal(self.total_votes) * 100, 2)
 
 
 class PlannedVoter(models.Model):
@@ -474,13 +487,31 @@ class VotingRecord(models.Model):
         verbose_name='Планируемый избиратель'
     )
     voting_date = models.DateField('Дата голосования', null=True, blank=True)
+    
+    def clean(self):
+        """Валидация даты голосования - только 12, 13, 14 сентября"""
+        if self.voting_date:
+            # Проверяем, что дата входит в разрешенный период
+            allowed_dates = [
+                date(2025, 9, 12),  # 12 сентября 2025
+                date(2025, 9, 13),  # 13 сентября 2025
+                date(2025, 9, 14),  # 14 сентября 2025
+            ]
+            if self.voting_date not in allowed_dates:
+                raise ValidationError({
+                    'voting_date': 'Дата голосования должна быть 12, 13 или 14 сентября 2025 года'
+                })
+    
+    def save(self, *args, **kwargs):
+        """Переопределяем save для валидации"""
+        self.clean()
+        super().save(*args, **kwargs)
     voting_method = models.CharField(
         'Способ голосования',
         max_length=20,
         choices=[
-            ('ballot_box', 'Урна'),
-            ('koib', 'КОИБ'),
-            ('independent', 'Самостоятельно'),
+            ('at_uik', 'В УИК'),
+            ('at_home', 'На дому'),
         ],
         blank=True
     )
@@ -564,6 +595,159 @@ class UIKAnalysis(models.Model):
         return round(Decimal(self.site_fact) / Decimal(self.site_plan) * 100, 2)
 
 
+class UIKResultsDaily(models.Model):
+    """Результаты голосования по УИК по дням"""
+    
+    uik = models.OneToOneField(UIK, on_delete=models.CASCADE, verbose_name='УИК', primary_key=True)
+    
+    # План по дням голосования
+    plan_12_sep = models.PositiveIntegerField('План 12.09', default=0, help_text='Плановое количество голосов 12 сентября')
+    plan_13_sep = models.PositiveIntegerField('План 13.09', default=0, help_text='Плановое количество голосов 13 сентября')
+    plan_14_sep = models.PositiveIntegerField('План 14.09', default=0, help_text='Плановое количество голосов 14 сентября')
+    
+    # Факты по дням голосования (ручные)
+    fact_12_sep = models.PositiveIntegerField('Факт 12.09', default=0, help_text='Фактическое количество голосов 12 сентября')
+    fact_13_sep = models.PositiveIntegerField('Факт 13.09', default=0, help_text='Фактическое количество голосов 13 сентября')
+    fact_14_sep = models.PositiveIntegerField('Факт 14.09', default=0, help_text='Фактическое количество голосов 14 сентября')
+    
+    # Расчетные факты по дням голосования
+    fact_12_sep_calculated = models.PositiveIntegerField('Расчет', default=0, help_text='Автоматически рассчитываемое количество голосов 12 сентября')
+    fact_13_sep_calculated = models.PositiveIntegerField('Расчет', default=0, help_text='Автоматически рассчитываемое количество голосов 13 сентября')
+    fact_14_sep_calculated = models.PositiveIntegerField('Расчет', default=0, help_text='Автоматически рассчитываемое количество голосов 14 сентября')
+    
+    # Флаги блокировки для каждого дня
+    fact_12_sep_locked = models.BooleanField('Блок 12.09', default=False, help_text='Заблокировать значение - использовать только ручное')
+    fact_13_sep_locked = models.BooleanField('Блок 13.09', default=False, help_text='Заблокировать значение - использовать только ручное')
+    fact_14_sep_locked = models.BooleanField('Блок 14.09', default=False, help_text='Заблокировать значение - использовать только ручное')
+    
+    # Источник текущего значения для каждого дня
+    fact_12_sep_source = models.CharField('Источник 12.09', max_length=20, choices=[('manual', 'Ручное'), ('calculated', 'Расчетное')], default='manual')
+    fact_13_sep_source = models.CharField('Источник 13.09', max_length=20, choices=[('manual', 'Ручное'), ('calculated', 'Расчетное')], default='manual')
+    fact_14_sep_source = models.CharField('Источник 14.09', max_length=20, choices=[('manual', 'Ручное'), ('calculated', 'Расчетное')], default='manual')
+    
+    created_at = models.DateTimeField('Дата создания', auto_now_add=True)
+    updated_at = models.DateTimeField('Дата обновления', auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Создал', related_name='created_uik_results_daily')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, verbose_name='Изменил', related_name='updated_uik_results_daily')
+    
+    class Meta:
+        verbose_name = 'Результаты по дням УИК'
+        verbose_name_plural = 'Результаты по дням УИК'
+        ordering = ['uik__number']
+        
+    def __str__(self):
+        return f"Результаты по дням УИК №{self.uik.number}"
+    
+    @property
+    def total_plan(self):
+        """Общий план по всем дням (автоматически рассчитывается)"""
+        return self.plan_12_sep + self.plan_13_sep + self.plan_14_sep
+    
+    @property
+    def total_fact(self):
+        """Общий факт по всем дням (автоматически рассчитывается)"""
+        return self.fact_12_sep + self.fact_13_sep + self.fact_14_sep
+    
+    @property
+    def plan_execution_percentage(self):
+        """Процент выполнения плана по дням"""
+        if self.total_plan == 0:
+            return Decimal('0.00')
+        return round(Decimal(self.total_fact) / Decimal(self.total_plan) * 100, 2)
+    
+    def get_effective_fact_12_sep(self):
+        """Получить эффективное значение факта за 12.09 с учетом блокировки"""
+        if self.fact_12_sep_locked:
+            return self.fact_12_sep
+        else:
+            # Если не заблокировано - используем максимальное из ручного и расчетного
+            return max(self.fact_12_sep, self.fact_12_sep_calculated)
+    
+    def get_effective_fact_13_sep(self):
+        """Получить эффективное значение факта за 13.09 с учетом блокировки"""
+        if self.fact_13_sep_locked:
+            return self.fact_13_sep
+        else:
+            # Если не заблокировано - используем максимальное из ручного и расчетного
+            return max(self.fact_13_sep, self.fact_13_sep_calculated)
+    
+    def get_effective_fact_14_sep(self):
+        """Получить эффективное значение факта за 14.09 с учетом блокировки"""
+        if self.fact_14_sep_locked:
+            return self.fact_14_sep
+        else:
+            # Если не заблокировано - используем максимальное из ручного и расчетного
+            return max(self.fact_14_sep, self.fact_14_sep_calculated)
+    
+    def update_effective_facts(self):
+        """Обновить эффективные значения фактов на основе логики переключения"""
+        # Обновляем источник для каждого дня
+        if not self.fact_12_sep_locked:
+            if self.fact_12_sep_calculated >= self.fact_12_sep:
+                self.fact_12_sep_source = 'calculated'
+            else:
+                self.fact_12_sep_source = 'manual'
+        
+        if not self.fact_13_sep_locked:
+            if self.fact_13_sep_calculated >= self.fact_13_sep:
+                self.fact_13_sep_source = 'calculated'
+            else:
+                self.fact_13_sep_source = 'manual'
+        
+        if not self.fact_14_sep_locked:
+            if self.fact_14_sep_calculated >= self.fact_14_sep:
+                self.fact_14_sep_source = 'calculated'
+            else:
+                self.fact_14_sep_source = 'manual'
+    
+    def calculate_daily_facts(self):
+        """Рассчитать факты по дням на основе подтвержденных голосований"""
+        from datetime import date
+        
+        # Получаем все подтвержденные голосования для этого УИК
+        confirmed_votings = VotingRecord.objects.filter(
+            planned_voter__voter__uik=self.uik,
+            confirmed_by_brigadier=True,
+            voting_date__isnull=False
+        )
+        
+        # Считаем голосования по дням
+        fact_12_count = confirmed_votings.filter(voting_date=date(2025, 9, 12)).count()
+        fact_13_count = confirmed_votings.filter(voting_date=date(2025, 9, 13)).count()
+        fact_14_count = confirmed_votings.filter(voting_date=date(2025, 9, 14)).count()
+        
+        # Обновляем расчетные значения
+        self.fact_12_sep_calculated = fact_12_count
+        self.fact_13_sep_calculated = fact_13_count
+        self.fact_14_sep_calculated = fact_14_count
+        pass
+    
+    def recalculate_all(self):
+        """Пересчитать все расчетные значения и обновить эффективные факты"""
+        self.calculate_daily_facts()
+        self.update_effective_facts()
+        
+        # Перезаписываем fact_XX_sep на эффективные значения если не заблокировано
+        if not self.fact_12_sep_locked:
+            self.fact_12_sep = max(self.fact_12_sep, self.fact_12_sep_calculated)
+        if not self.fact_13_sep_locked:
+            self.fact_13_sep = max(self.fact_13_sep, self.fact_13_sep_calculated)
+        if not self.fact_14_sep_locked:
+            self.fact_14_sep = max(self.fact_14_sep, self.fact_14_sep_calculated)
+        
+        self.save(update_fields=[
+            'fact_12_sep_calculated', 'fact_13_sep_calculated', 'fact_14_sep_calculated',
+            'fact_12_sep', 'fact_13_sep', 'fact_14_sep',
+            'fact_12_sep_source', 'fact_13_sep_source', 'fact_14_sep_source'
+        ])
+    
+    def save(self, *args, **kwargs):
+        """Переопределяем save для автоматического обновления логики"""
+        # Обновляем эффективные факты перед сохранением
+        self.update_effective_facts()
+        super().save(*args, **kwargs)
+
+
 class Analytics(models.Model):
     """Модель для аналитических данных"""
     
@@ -593,6 +777,17 @@ def update_planned_voter_status(sender, instance, created, **kwargs):
     """Автоматически обновляем статус планируемого избирателя при изменении записи о голосовании"""
     if instance.planned_voter:
         instance.planned_voter.update_status_from_voting_record()
+        
+        # Пересчитываем UIKResultsDaily при любом изменении подтверждения или даты голосования
+        if instance.voting_date:
+            try:
+                uik_results_daily = UIKResultsDaily.objects.get(uik=instance.planned_voter.voter.uik)
+                uik_results_daily.recalculate_all()
+            except UIKResultsDaily.DoesNotExist:
+                # Создаем запись если её нет
+                UIKResultsDaily.objects.create(uik=instance.planned_voter.voter.uik)
+                uik_results_daily = UIKResultsDaily.objects.get(uik=instance.planned_voter.voter.uik)
+                uik_results_daily.recalculate_all()
 
 
 @receiver(post_save, sender=UIK)
@@ -600,6 +795,7 @@ def create_uik_analysis(sender, instance, created, **kwargs):
     """Автоматически создаем запись анализа при создании УИК"""
     if created:
         UIKAnalysis.objects.create(uik=instance)
+        UIKResultsDaily.objects.create(uik=instance)
 
 
 

@@ -119,7 +119,7 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/5.2/topics/i18n/
 
-LANGUAGE_CODE = 'ru-ru'
+LANGUAGE_CODE = 'ru'
 
 TIME_ZONE = 'Europe/Moscow'
 
@@ -129,7 +129,6 @@ USE_TZ = True
 
 LANGUAGES = [
     ('ru', 'Русский'),
-    ('en', 'English'),
 ]
 
 LOCALE_PATHS = [
@@ -183,7 +182,7 @@ UNFOLD = {
     "SHOW_HISTORY": True,
     "SHOW_VIEW_ON_SITE": False,  # Отключаем "Смотреть на сайте" так как сайта нет
     "ENVIRONMENT": "elections_system.settings.environment_callback",
-    "DASHBOARD_CALLBACK": "elections.dashboard.user_dashboard_callback",
+    "DASHBOARD_CALLBACK": "elections.dashboard.main_dashboard_callback",
     "LOGIN": {
         "image": lambda request: "admin/img/login-bg.jpg",
         "redirect_after": lambda request: "/admin/",
@@ -211,7 +210,6 @@ UNFOLD = {
     "EXTENSIONS": {
         "modeltranslation": {
             "flags": {
-                "en": "🇬🇧",
                 "ru": "🇷🇺",
             },
         },
@@ -241,14 +239,14 @@ def get_sidebar_navigation(request):
                 "separator": True,
                 "items": [
                     {
-                        "title": "Дашборд",
-                        "icon": "bar_chart",
-                        "link": lambda request: "/dashboard/",
-                    },
-                    {
-                        "title": "Анализ по УИК",
+                        "title": "Анализ подготовки по УИК",
                         "icon": "analytics",
                         "link": lambda request: "/dashboard/analysis/",
+                    },
+                    {
+                        "title": "Результаты голосования",
+                        "icon": "poll",
+                        "link": lambda request: "/dashboard/results/",
                     },
                 ],
             },
@@ -329,9 +327,14 @@ def get_sidebar_navigation(request):
                     "link": lambda request: "/admin/elections/uikresults/",
                 },
                 {
-                    "title": "Анализ по УИК",
+                    "title": "Анализ подготовки по УИК",
                     "icon": "analytics",
                     "link": lambda request: "/admin/elections/uikanalysis/",
+                },
+                {
+                    "title": "Результаты по дням УИК",
+                    "icon": "calendar_today",
+                    "link": lambda request: "/admin/elections/uikresultsdaily/",
                 },
             ],
         },
@@ -340,14 +343,14 @@ def get_sidebar_navigation(request):
             "separator": True,
             "items": [
                 {
-                    "title": "Дашборд",
-                    "icon": "bar_chart",
-                    "link": lambda request: "/dashboard/",
-                },
-                {
-                    "title": "Анализ по УИК",
+                    "title": "Анализ подготовки",
                     "icon": "analytics",
                     "link": lambda request: "/dashboard/analysis/",
+                },
+                {
+                    "title": "Результаты голосования",
+                    "icon": "poll",
+                    "link": lambda request: "/dashboard/results/",
                 },
             ],
         },
@@ -381,7 +384,7 @@ LOGGING = {
         },
         'django.db.backends': {
             'handlers': ['console'],
-            'level': 'DEBUG',
+            'level': 'WARNING',
             'propagate': False,
         },
     },

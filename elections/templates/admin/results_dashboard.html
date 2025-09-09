@@ -139,12 +139,35 @@
         margin-bottom: 20px;
     }
     
+    .stats-grid-three {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1fr;
+        gap: 12px;
+        margin-bottom: 16px;
+    }
+    
     .stat-item {
         text-align: center;
         padding: 16px;
         border-radius: 8px;
         background: #f8fafc;
     }
+    
+    .plan-item {
+        background: #fef3c7;
+        border: 2px solid #f59e0b;
+    }
+    
+    .fact-item {
+        background: #d1fae5;
+        border: 2px solid #10b981;
+    }
+    
+    .percent-item {
+        background: #e0e7ff;
+        border: 2px solid #6366f1;
+    }
+    
     
     .stat-number {
         font-size: 2rem;
@@ -200,10 +223,11 @@
     
     /* Ширины колонок */
     .col-uik { width: 50px; }
-    .col-total { width: 60px; }
-    .col-plan { width: 45px; }
-    .col-fact { width: 45px; }
-    .col-percent { width: 50px; }
+    .col-total { width: 50px; }
+    .col-plan { width: 40px; }
+    .col-fact { width: 40px; }
+    .col-percent { width: 45px; }
+    .col-daily { width: 35px; }
     .col-separator { width: 2px; background: #e2e8f0; }
     
     .uik-table tr:hover {
@@ -224,6 +248,11 @@
     
     .row-danger {
         background: linear-gradient(90deg, rgba(220, 38, 38, 0.15) 0%, rgba(185, 28, 28, 0.1) 100%);
+    }
+    
+    .row-yellow {
+        background: linear-gradient(90deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%);
+        border-left: 3px solid #f59e0b;
     }
     
     .percentage-badge {
@@ -249,14 +278,8 @@
         color: #991b1b;
     }
     
-    .card-title {
-        font-size: 1rem;
+    .total-column {
         font-weight: 600;
-        color: #333;
-        margin-bottom: 12px;
-        display: flex;
-        align-items: center;
-        gap: 8px;
     }
     
     .table-container {
@@ -267,13 +290,14 @@
         overflow-x: hidden;
     }
     
-    .total-column {
+    .card-title {
+        font-size: 1rem;
         font-weight: 600;
-    }
-    
-    .row-yellow {
-        background: linear-gradient(90deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%);
-        border-left: 3px solid #f59e0b;
+        color: #333;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
     }
     
     .no-data {
@@ -281,17 +305,6 @@
         padding: 40px;
         color: #64748b;
         font-style: italic;
-    }
-    
-    @media (max-width: 1200px) {
-        .dashboard-container {
-            grid-template-columns: 1fr;
-            height: auto;
-        }
-        
-        .stats-grid {
-            grid-template-columns: 1fr;
-        }
     }
     
     .last-update {
@@ -320,72 +333,134 @@
         font-weight: 500;
         z-index: 1000;
     }
+    
+    @media (max-width: 1200px) {
+        .dashboard-container {
+            grid-template-columns: 1fr;
+            height: auto;
+        }
+        
+        .stats-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="dashboard-header">
-    <h1>Анализ по УИК</h1>
+    <h1>Результаты голосования</h1>
     <a href="/admin/" class="dashboard-back">← Назад в админку</a>
 </div>
 
 <div class="dashboard-container">
     <!-- Левая панель -->
     <div class="left-panel">
-        <!-- Общая статистика по УИК -->
+        <!-- Общая статистика -->
         <div class="dashboard-card">
-            <div class="card-title">Общая статистика</div>
+            <div class="card-title">Общая статистика результатов голосования</div>
+            
+            <!-- Общий план -->
             <div class="stats-grid">
                 <div class="stat-item">
-                    <div class="stat-number">{{ total_uiks }}</div>
-                    <div class="stat-label">Всего УИК</div>
+                    <div class="stat-number" style="color: #1e293b;">{{ total_plan }}</div>
+                    <div class="stat-label">Общий план</div>
                 </div>
-                <div class="stat-item">
-                    <div class="stat-number">{{ completed_uiks }}</div>
-                    <div class="stat-label">Выполнили план</div>
+                <div class="stat-item" style="display: flex; flex-direction: column; align-items: center; padding: 8px;">
+                    <!-- Общий факт сверху по центру -->
+                    <div style="text-align: center; margin-bottom: 8px;">
+                        <div class="stat-number" style="color: {% if plan_execution_percent >= 100 %}#059669{% elif plan_execution_percent >= 80 %}#d97706{% else %}#dc2626{% endif %}; font-size: 1.8rem; margin-bottom: 4px;">{{ total_fact }}</div>
+                        <div class="stat-label" style="font-size: 0.8rem;">Общий факт</div>
+                    </div>
+                    
+                    <!-- В УИК и На дому снизу -->
+                    <div style="display: flex; gap: 8px; width: 100%;">
+                        <div style="flex: 1; text-align: center; padding: 4px; background: #f8fafc; border-radius: 4px;">
+                            <div style="font-size: 1.2rem; font-weight: 700; color: #3b82f6;">{{ total_at_uik }}</div>
+                            <div style="font-size: 0.7rem; color: #64748b;">В УИК</div>
+                        </div>
+                        <div style="flex: 1; text-align: center; padding: 4px; background: #f8fafc; border-radius: 4px;">
+                            <div style="font-size: 1.2rem; font-weight: 700; color: #8b5cf6;">{{ total_at_home }}</div>
+                            <div style="font-size: 0.7rem; color: #64748b;">На дому</div>
+                        </div>
+                    </div>
                 </div>
             </div>
-            {% if total_uiks > 0 %}
+            
+            <!-- Прогресс-бар -->
+            {% if total_plan > 0 %}
             <div class="progress-bar">
-                <div class="progress-fill" style="width: {% widthratio completed_uiks total_uiks 100 %}%"></div>
+                <div class="progress-fill" style="width: {% if plan_execution_percent > 100 %}100{% else %}{{ plan_execution_percent|floatformat:0 }}{% endif %}%; background: {% if plan_execution_percent >= 100 %}linear-gradient(90deg, #10b981 0%, #059669 100%){% elif plan_execution_percent >= 80 %}linear-gradient(90deg, #f59e0b 0%, #d97706 100%){% else %}linear-gradient(90deg, #ef4444 0%, #dc2626 100%){% endif %};"></div>
             </div>
             <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
-                Выполнение: {% widthratio completed_uiks total_uiks 100 %}%
+                Выполнение: {{ plan_execution_percent }}%
             </div>
             {% endif %}
         </div>
         
-        <!-- Статистика по избирателям -->
+        <!-- Голосование по дням -->
         <div class="dashboard-card">
-            <div class="card-title">Избиратели</div>
+            <div class="card-title">Результаты голосования по дням</div>
             <div class="stats-grid">
                 <div class="stat-item">
-                    <div class="stat-number">{{ total_planned_voters }}</div>
-                    <div class="stat-label">План</div>
+                    <div class="stat-number" style="color: #1e293b;">{{ total_plan_12_sep }}</div>
+                    <div class="stat-label">План 12.09</div>
                 </div>
                 <div class="stat-item">
-                    <div class="stat-number">{{ total_confirmed_voters }}</div>
-                    <div class="stat-label">Факт</div>
+                    <div class="stat-number" style="color: {% if plan_12_percent >= 100 %}#059669{% elif plan_12_percent >= 80 %}#d97706{% else %}#dc2626{% endif %};">{{ total_12_sep }}</div>
+                    <div class="stat-label">Факт 12.09</div>
                 </div>
             </div>
-            {% if total_planned_voters > 0 %}
             <div class="progress-bar">
-                <div class="progress-fill" style="width: {{ voters_percentage }}%"></div>
+                <div class="progress-fill" style="width: {% if plan_12_percent > 100 %}100{% elif plan_12_percent > 0 %}{% if plan_12_percent < 1 %}1{% else %}{{ plan_12_percent|floatformat:0 }}{% endif %}{% else %}0{% endif %}%; background: {% if plan_12_percent >= 100 %}linear-gradient(90deg, #10b981 0%, #059669 100%){% elif plan_12_percent >= 80 %}linear-gradient(90deg, #f59e0b 0%, #d97706 100%){% else %}linear-gradient(90deg, #ef4444 0%, #dc2626 100%){% endif %};"></div>
             </div>
             <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
-                Выполнение: {{ voters_percentage }}%
+                12.09: {{ plan_12_percent|floatformat:0 }}%
             </div>
-            {% endif %}
+            
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number" style="color: #1e293b;">{{ total_plan_13_sep }}</div>
+                    <div class="stat-label">План 13.09</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" style="color: {% if plan_13_percent >= 100 %}#059669{% elif plan_13_percent >= 80 %}#d97706{% else %}#dc2626{% endif %};">{{ total_13_sep }}</div>
+                    <div class="stat-label">Факт 13.09</div>
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {% if plan_13_percent > 100 %}100{% elif plan_13_percent > 0 %}{% if plan_13_percent < 1 %}1{% else %}{{ plan_13_percent|floatformat:0 }}{% endif %}{% else %}0{% endif %}%; background: {% if plan_13_percent >= 100 %}linear-gradient(90deg, #10b981 0%, #059669 100%){% elif plan_13_percent >= 80 %}linear-gradient(90deg, #f59e0b 0%, #d97706 100%){% else %}linear-gradient(90deg, #ef4444 0%, #dc2626 100%){% endif %};"></div>
+            </div>
+            <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
+                13.09: {{ plan_13_percent|floatformat:0 }}%
+            </div>
+            
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-number" style="color: #1e293b;">{{ total_plan_14_sep }}</div>
+                    <div class="stat-label">План 14.09</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-number" style="color: {% if plan_14_percent >= 100 %}#059669{% elif plan_14_percent >= 80 %}#d97706{% else %}#dc2626{% endif %};">{{ total_14_sep }}</div>
+                    <div class="stat-label">Факт 14.09</div>
+                </div>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: {% if plan_14_percent > 100 %}100{% elif plan_14_percent > 0 %}{% if plan_14_percent < 1 %}1{% else %}{{ plan_14_percent|floatformat:0 }}{% endif %}{% else %}0{% endif %}%; background: {% if plan_14_percent >= 100 %}linear-gradient(90deg, #10b981 0%, #059669 100%){% elif plan_14_percent >= 80 %}linear-gradient(90deg, #f59e0b 0%, #d97706 100%){% else %}linear-gradient(90deg, #ef4444 0%, #dc2626 100%){% endif %};"></div>
+            </div>
+            <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
+                14.09: {{ plan_14_percent|floatformat:0 }}%
+            </div>
         </div>
     </div>
     
-    <!-- Правая панель - Таблица УИК -->
+    <!-- Правая панель - Таблица результатов -->
     <div class="right-panel">
         <div class="dashboard-card" style="flex: 1; display: flex; flex-direction: column;">
             <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
-                <span>Детализация по УИК</span>
+                <span>Детализация результатов по УИК</span>
                 <div class="last-update">
-                    Обновлено: {{ last_update_time|date:"d.m.Y H:i:s" }}
+                    Обновлено: {% now "d.m.Y H:i:s" %}
                 </div>
             </div>
             {% if uik_table_data %}
@@ -398,11 +473,14 @@
                             <th class="col-total">Общий факт</th>
                             <th class="col-percent">Общий %</th>
                             <th class="col-separator"></th>
-                            <th class="col-plan">План на дому</th>
-                            <th class="col-fact">Факт на дому</th>
+                            <th class="col-plan">План 12.09</th>
+                            <th class="col-fact">Факт 12.09</th>
                             <th class="col-percent">%</th>
-                            <th class="col-plan">План на участке</th>
-                            <th class="col-fact">Факт на участке</th>
+                            <th class="col-plan">План 13.09</th>
+                            <th class="col-fact">Факт 13.09</th>
+                            <th class="col-percent">%</th>
+                            <th class="col-plan">План 14.09</th>
+                            <th class="col-fact">Факт 14.09</th>
                             <th class="col-percent">%</th>
                         </tr>
                     </thead>
@@ -410,35 +488,45 @@
                         {% for uik in uik_table_data %}
                         <tr class="row-{{ uik.row_color }}">
                             <td><strong>№{{ uik.uik_number }}</strong></td>
-                            <td class="total-column"><strong>{{ uik.total_plan }}</strong></td>
-                            <td class="total-column"><strong>{{ uik.total_fact }}</strong></td>
+                            <td class="total-column"><strong>{{ uik.plan_total }}</strong></td>
+                            <td class="total-column"><strong>{{ uik.fact_total }}</strong></td>
                             <td class="total-column">
                                 <span class="percentage-badge 
-                                    {% if uik.execution_percent >= 100 %}percentage-success
-                                    {% elif uik.execution_percent >= 80 %}percentage-warning
+                                    {% if uik.plan_execution_percent >= 100 %}percentage-success
+                                    {% elif uik.plan_execution_percent >= 80 %}percentage-warning
                                     {% else %}percentage-danger{% endif %}">
-                                    {{ uik.execution_percent }}%
+                                    {{ uik.plan_execution_percent }}%
                                 </span>
                             </td>
                             <td class="col-separator"></td>
-                            <td>{{ uik.home_plan }}</td>
-                            <td>{{ uik.home_fact }}</td>
+                            <td>{{ uik.plan_12_sep }}</td>
+                            <td>{{ uik.fact_12_sep }}</td>
                             <td>
                                 <span class="percentage-badge 
-                                    {% if uik.home_execution_percent >= 100 %}percentage-success
-                                    {% elif uik.home_execution_percent >= 80 %}percentage-warning
+                                    {% if uik.plan_12_percent >= 100 %}percentage-success
+                                    {% elif uik.plan_12_percent >= 80 %}percentage-warning
                                     {% else %}percentage-danger{% endif %}">
-                                    {{ uik.home_execution_percent }}%
+                                    {{ uik.plan_12_percent }}%
                                 </span>
                             </td>
-                            <td>{{ uik.site_plan }}</td>
-                            <td>{{ uik.site_fact }}</td>
+                            <td>{{ uik.plan_13_sep }}</td>
+                            <td>{{ uik.fact_13_sep }}</td>
                             <td>
                                 <span class="percentage-badge 
-                                    {% if uik.site_execution_percent >= 100 %}percentage-success
-                                    {% elif uik.site_execution_percent >= 80 %}percentage-warning
+                                    {% if uik.plan_13_percent >= 100 %}percentage-success
+                                    {% elif uik.plan_13_percent >= 80 %}percentage-warning
                                     {% else %}percentage-danger{% endif %}">
-                                    {{ uik.site_execution_percent }}%
+                                    {{ uik.plan_13_percent }}%
+                                </span>
+                            </td>
+                            <td>{{ uik.plan_14_sep }}</td>
+                            <td>{{ uik.fact_14_sep }}</td>
+                            <td>
+                                <span class="percentage-badge 
+                                    {% if uik.plan_14_percent >= 100 %}percentage-success
+                                    {% elif uik.plan_14_percent >= 80 %}percentage-warning
+                                    {% else %}percentage-danger{% endif %}">
+                                    {{ uik.plan_14_percent }}%
                                 </span>
                             </td>
                         </tr>
