@@ -918,6 +918,18 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         
         return super().changelist_view(request, extra_context)
     
+    def add_view(self, request, form_url='', extra_context=None):
+        """Обработка создания новой записи избирателя"""
+        try:
+            return super().add_view(request, form_url, extra_context)
+        except Exception as e:
+            from django.contrib import messages
+            error_msg = str(e)
+            if "RelatedObjectDoesNotExist" in error_msg and "uik" in error_msg:
+                messages.error(request, "Ошибка: не указан УИК. Поле 'УИК' является обязательным для создания избирателя.")
+            else:
+                messages.error(request, f"Ошибка при создании записи: {error_msg}")
+            return self.response_add(request, None, extra_context)
     
     def get_fieldsets(self, request, obj=None):
         """Динамические поля в зависимости от роли"""
@@ -978,6 +990,13 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         """Сохранение с проверкой прав"""
         # Сохраняем запрос для валидации
         obj._request = request
+        
+        # Проверяем обязательные поля при создании
+        if not change:  # Создание новой записи
+            if not obj.uik:
+                from django.contrib import messages
+                messages.error(request, "Поле 'УИК' является обязательным для создания избирателя.")
+                return
         
         # Вызываем валидацию модели
         try:

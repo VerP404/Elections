@@ -378,6 +378,12 @@ class Voter(models.Model):
         """Валидация модели"""
         super().clean()
 
+        # Проверяем обязательные поля
+        if not self.uik:
+            raise ValidationError({
+                'uik': 'Поле "УИК" является обязательным'
+            })
+
         # Проверяем, что агитатор работает в этом УИК
         if self.agitator and self.uik:
             if not self.uik.agitators.filter(id=self.agitator.id).exists():
