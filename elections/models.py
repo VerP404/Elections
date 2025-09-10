@@ -65,20 +65,14 @@ class User(AbstractUser):
         super().clean()
 
         # Проверка уникальности пользователей в УИК
-        if self.role in ['brigadier', 'agitator'] and self.pk is not None:
-            # Проверяем, что пользователь не назначен в другие УИК
-            if self.role == 'brigadier':
-                other_uiks = UIK.objects.filter(brigadier=self).exclude(pk=getattr(self, 'pk', None))
-                if other_uiks.exists():
-                    raise ValidationError({
-                        'role': 'Этот бригадир уже назначен в другой УИК.'
-                    })
-            elif self.role == 'agitator':
-                other_uiks = UIK.objects.filter(agitators=self).exclude(pk=getattr(self, 'pk', None))
-                if other_uiks.exists():
-                    raise ValidationError({
-                        'role': 'Этот агитатор уже назначен в другой УИК.'
-                    })
+        if self.role in ['agitator'] and self.pk is not None:
+            # Агитатор может работать только в одном УИК
+            other_uiks = UIK.objects.filter(agitators=self).exclude(pk=getattr(self, 'pk', None))
+            if other_uiks.exists():
+                raise ValidationError({
+                    'role': 'Этот агитатор уже назначен в другой УИК.'
+                })
+        # Бригадир может работать в нескольких УИК - проверку не делаем
 
     @property
     def is_agitator(self):
@@ -199,14 +193,8 @@ class UIK(models.Model):
         """Валидация модели"""
         super().clean()
 
-        # Проверяем, что бригадир не назначен в другие УИК
-        if self.brigadier:
-            other_uiks = UIK.objects.filter(brigadier=self.brigadier).exclude(pk=self.pk)
-            if other_uiks.exists():
-                raise ValidationError({
-                    'brigadier': 'Этот бригадир уже назначен в другой УИК.'
-                })
-
+        # Бригадир может работать в нескольких УИК - проверку не делаем
+        
         # Проверяем, что агитаторы не назначены в другие УИК
         # Проверяем только если экземпляр уже сохранен (имеет ID)
         if self.pk:
