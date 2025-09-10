@@ -728,7 +728,7 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     def planned_voters_count(self, obj):
         return obj.planned_voters_count
     
-    @display(description='Фактическое кол-во')
+    @display(description='Факт')
     def actual_voters_count(self, obj):
         return obj.actual_voters_count
     

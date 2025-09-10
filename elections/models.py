@@ -138,7 +138,7 @@ class UIK(models.Model):
 
     number = models.PositiveIntegerField('Номер УИК', unique=True)
     address = models.TextField('Адрес')
-    planned_voters_count = models.PositiveIntegerField('Плановое количество избирателей', default=0,
+    planned_voters_count = models.PositiveIntegerField('План', default=0,
                                                        help_text='Ожидаемое количество избирателей на участке')
 
     # Связи с пользователями
