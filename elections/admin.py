@@ -7,7 +7,7 @@ from django.urls import reverse
 from django.utils.safestring import mark_safe
 from django.shortcuts import render
 from unfold.admin import ModelAdmin, TabularInline
-from unfold.decorators import display
+from unfold.decorators import display, action
 from unfold.forms import AdminPasswordChangeForm, UserChangeForm, UserCreationForm
 from unfold.sections import TableSection
 from unfold.contrib.import_export.forms import ExportForm, ImportForm, SelectableFieldsExportForm
@@ -20,8 +20,65 @@ from django.core.exceptions import ValidationError
 from django import forms
 from django.contrib import messages
 from django.http import HttpResponseRedirect
+from datetime import date
 
 from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, UIKResultsDaily, Analytics
+
+
+# Форма для массового обновления избирателей
+class BulkUpdateVotersForm(forms.Form):
+    """Форма для массового обновления избирателей по ID"""
+    
+    voter_ids = forms.CharField(
+        label='ID избирателей',
+        help_text='Введите ID избирателей через запятую (например: 1,2,3,4)',
+        widget=forms.Textarea(attrs={'rows': 3, 'placeholder': '1,2,3,4,5...'})
+    )
+    
+    voting_date = forms.DateField(
+        label='Дата голосования',
+        initial=date.today,
+        help_text='Дата голосования (по умолчанию сегодняшняя)'
+    )
+    
+    voting_method = forms.ChoiceField(
+        label='Способ голосования',
+        choices=[
+            ('at_uik', 'В УИК'),
+            ('at_home', 'На дому'),
+        ],
+        initial='at_uik',
+        required=True,
+        help_text='Обязательно выберите способ голосования'
+    )
+    
+    confirmed_by_brigadier = forms.BooleanField(
+        label='Подтвердить голосование',
+        required=False,
+        help_text='Отметить как подтвержденное бригадиром'
+    )
+    
+    def clean_voter_ids(self):
+        """Валидация списка ID"""
+        ids_text = self.cleaned_data.get('voter_ids', '')
+        if not ids_text.strip():
+            raise ValidationError('Необходимо указать ID избирателей')
+        
+        try:
+            ids = [int(id_str.strip()) for id_str in ids_text.split(',') if id_str.strip()]
+            if not ids:
+                raise ValidationError('Не найдено корректных ID')
+            
+            # Проверяем существование избирателей
+            existing_ids = set(Voter.objects.filter(id__in=ids).values_list('id', flat=True))
+            missing_ids = set(ids) - existing_ids
+            
+            if missing_ids:
+                raise ValidationError(f'Избиратели с ID {sorted(missing_ids)} не найдены')
+            
+            return ids
+        except ValueError:
+            raise ValidationError('ID должны быть числами, разделенными запятыми')
 
 
 # Секции для Unfold
@@ -824,15 +881,18 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     export_form_class = ExportForm
     # export_form_class = SelectableFieldsExportForm  # Альтернативный вариант с выбором полей
     
-    list_display = ['full_name', 'birth_date_display', 'uik', 'agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
+    list_display = ['id', 'full_name', 'birth_date_display', 'uik', 'brigadier_display', 'agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
     list_filter = ['voting_method', 'confirmed_by_brigadier', 'uik', 'agitator', 'planned_date', 'voting_date', 'created_at']
-    search_fields = ['last_name', 'first_name', 'middle_name', 'phone_number', 'uik__number', 'agitator__assigned_uiks_as_agitator__number']
+    search_fields = ['id', 'last_name', 'first_name', 'middle_name', 'phone_number', 'uik__number', 'agitator__assigned_uiks_as_agitator__number']
     list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier']
     list_per_page = 50
     autocomplete_fields = ['agitator']
     
     # Форматы для импорта-экспорта
     formats = [XLSX, CSV]
+    
+    # Changelist actions (кнопки в верхней части списка)
+    actions_list = ['bulk_confirm_voters']
     
     
     @admin.display(description='Дата рождения', ordering='birth_date')
@@ -1187,6 +1247,13 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         return f"№{obj.uik.number}"
     
     
+    @display(description='Бригадир')
+    def brigadier_display(self, obj):
+        """Отображение бригадира УИК"""
+        if obj.uik and obj.uik.brigadier:
+            return f"{obj.uik.brigadier.last_name} {obj.uik.brigadier.first_name[0]}.{obj.uik.brigadier.middle_name[0]}."
+        return '-'
+    
     @display(description='Агитатор')
     def agitator(self, obj):
         """Компактное отображение агитатора"""
@@ -1371,6 +1438,7 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         return render(request, 'admin/remove_agitator_safely.html', context)
     
     remove_agitator_safely.short_description = "Безопасно удалить агитатора"
+    
 
     def get_model_perms(self, request):
         perms = super().get_model_perms(request)
@@ -1381,6 +1449,91 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         
         # Остальные роли могут просматривать, добавлять и изменять
         return {'add': perms['add'], 'change': perms['change'], 'view': perms['view']}
+    
+    @action(description="Подтверждение", url_path="bulk-confirm", permissions=["bulk_confirm_voters"])
+    def bulk_confirm_voters(self, request):
+        """Changelist action для массового подтверждения избирателей"""
+        if request.method == 'POST':
+            form = BulkUpdateVotersForm(request.POST)
+            if form.is_valid():
+                voter_ids = form.cleaned_data['voter_ids']
+                voting_date = form.cleaned_data['voting_date']
+                voting_method = form.cleaned_data['voting_method']
+                confirmed_by_brigadier = form.cleaned_data['confirmed_by_brigadier']
+                
+                # Получаем избирателей для обновления
+                voters = Voter.objects.filter(id__in=voter_ids)
+                
+                updated_count = 0
+                error_count = 0
+                errors = []
+                
+                for voter in voters:
+                    try:
+                        # Обновляем поля
+                        voter.voting_date = voting_date
+                        voter.voting_method = voting_method
+                        if confirmed_by_brigadier:
+                            voter.confirmed_by_brigadier = True
+                        
+                        # Сохраняем запрос для валидации
+                        voter._request = request
+                        
+                        # Вызываем валидацию и сохраняем
+                        voter.clean()
+                        voter.save()
+                        updated_count += 1
+                        
+                    except ValidationError as e:
+                        error_count += 1
+                        for field, field_errors in e.message_dict.items():
+                            for error in field_errors:
+                                errors.append(f"ID {voter.id} ({voter.get_full_name()}): {field}: {error}")
+                    except Exception as e:
+                        error_count += 1
+                        errors.append(f"ID {voter.id} ({voter.get_full_name()}): {str(e)}")
+                
+                # Показываем результаты
+                if updated_count > 0:
+                    messages.success(request, f"Успешно обновлено записей: {updated_count}")
+                
+                if error_count > 0:
+                    messages.warning(request, f"Записей с ошибками: {error_count}")
+                    for error in errors[:10]:  # Показываем первые 10 ошибок
+                        messages.error(request, error)
+                    if len(errors) > 10:
+                        messages.error(request, f"... и еще {len(errors) - 10} ошибок")
+                
+                if updated_count == 0 and error_count == 0:
+                    messages.info(request, "Нет записей для обновления")
+                
+                # Если есть ошибки, показываем форму с сохраненными данными
+                if error_count > 0:
+                    context = {
+                        'title': 'Массовое подтверждение избирателей',
+                        'form': form,  # Используем форму с данными
+                        'opts': self.model._meta,
+                    }
+                    return render(request, 'admin/bulk_confirm_voters.html', context)
+                else:
+                    # Если нет ошибок, перенаправляем
+                    return HttpResponseRedirect(request.get_full_path())
+        else:
+            form = BulkUpdateVotersForm()
+        
+        context = {
+            'title': 'Массовое подтверждение избирателей',
+            'form': form,
+            'opts': self.model._meta,
+        }
+        
+        return render(request, 'admin/bulk_confirm_voters.html', context)
+    
+    def has_bulk_confirm_voters_permission(self, request):
+        """Проверка прав на массовое подтверждение"""
+        # Только админы, операторы и бригадиры могут подтверждать
+        return (request.user.is_superuser or 
+                request.user.role in ['admin', 'operator', 'brigadier'])
 
 
 @admin.register(UIKResults)
