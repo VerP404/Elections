@@ -473,7 +473,7 @@ class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
     
     list_display = ['username', 'id', 'get_full_name', 'phone_number', 'role', 'workplace', 'is_active_participant', 'is_active']
     list_filter = ['role', 'is_active_participant', 'is_active', 'workplace']
-    search_fields = ['username', 'first_name', 'last_name', 'phone_number', 'email', 'assigned_uiks_as_agitator__number']
+    search_fields = ['username', 'first_name', 'last_name', 'phone_number', 'email', 'assigned_uiks_as_agitator__number', 'assigned_uik_as_brigadier__number']
     ordering = ['id']
     
     fieldsets = (
@@ -581,6 +581,7 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     ordering = ['number']
     readonly_fields = ['created_by', 'updated_by', 'created_at', 'updated_at']
     filter_horizontal = ['agitators']
+    autocomplete_fields = ['brigadier']
     
     # Поля для редактирования
     fieldsets = (

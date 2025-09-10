@@ -114,7 +114,16 @@ class User(AbstractUser):
         """Отображение пользователя с учетом роли"""
         if self.role == 'agitator':
             # Для агитаторов показываем УИК
-            uik = self.assigned_uiks_as_agitator.first()
+            uiks = list(self.assigned_uiks_as_agitator.all())
+            if uiks:
+                uik_numbers = ', '.join([str(uik.number) for uik in uiks])
+                uik_info = f" (УИК {uik_numbers})"
+            else:
+                uik_info = " (не назначен)"
+            return f"{self.get_short_name()}{uik_info}"
+        elif self.role == 'brigadier':
+            # Для бригадиров показываем УИК
+            uik = self.assigned_uik_as_brigadier.first()
             uik_info = f" (УИК {uik.number})" if uik else " (не назначен)"
             return f"{self.get_short_name()}{uik_info}"
         return self.get_full_name()
