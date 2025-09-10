@@ -15,6 +15,7 @@ from import_export.admin import ImportExportModelAdmin
 from import_export import resources
 from import_export.formats.base_formats import XLSX, CSV, XLS
 from django.db import models
+from django.db.models import Q
 from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django import forms
@@ -883,7 +884,7 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     
     list_display = ['id', 'full_name', 'birth_date_display', 'uik', 'brigadier_display', 'agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
     list_filter = ['voting_method', 'confirmed_by_brigadier', 'uik', 'agitator', 'planned_date', 'voting_date', 'created_at']
-    search_fields = ['id', 'last_name', 'first_name', 'middle_name', 'phone_number', 'uik__number', 'agitator__assigned_uiks_as_agitator__number']
+    search_fields = ['id', 'last_name', 'first_name', 'middle_name']
     list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier']
     list_per_page = 50
     autocomplete_fields = ['agitator']
@@ -1528,6 +1529,43 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         }
         
         return render(request, 'admin/bulk_confirm_voters.html', context)
+    
+    def get_search_results(self, request, queryset, search_term):
+        """Кастомный поиск по ID и ФИО с нечувствительностью к регистру"""
+        if search_term:
+            search_term = search_term.strip()
+            
+            # Поиск по ID (точный)
+            if search_term.isdigit():
+                queryset = queryset.filter(id=search_term)
+            else:
+                # Очищаем от лишних символов и разбиваем на слова
+                cleaned_term = search_term.replace('.', '').replace(',', '').replace('  ', ' ').strip()
+                terms = [term.strip() for term in cleaned_term.split() if term.strip()]
+                
+                if terms:
+                    # Создаем Q объект для поиска по каждому слову
+                    q_objects = Q()
+                    
+                    for term in terms:
+                        # Поиск по отдельным полям ФИО с разными вариантами регистра
+                        # Создаем варианты регистра для кириллицы
+                        term_variants = [term, term.capitalize(), term.upper()]
+                        
+                        field_search = Q()
+                        for variant in term_variants:
+                            field_search |= (
+                                Q(last_name__icontains=variant) |
+                                Q(first_name__icontains=variant) |
+                                Q(middle_name__icontains=variant)
+                            )
+                        
+                        # Добавляем как AND условие (все слова должны найтись)
+                        q_objects &= field_search
+                    
+                    queryset = queryset.filter(q_objects)
+        
+        return queryset, False
     
     def has_bulk_confirm_voters_permission(self, request):
         """Проверка прав на массовое подтверждение"""
