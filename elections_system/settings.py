@@ -256,6 +256,11 @@ def get_sidebar_navigation(request):
                         "icon": "group",
                         "link": lambda request: "/dashboard/results-table/",
                     },
+                    {
+                        "title": "Результаты по руководителям",
+                        "icon": "supervisor_account",
+                        "link": lambda request: "/dashboard/results-by-brigadiers/",
+                    },
                 ],
             },
         ]
@@ -354,6 +359,11 @@ def get_sidebar_navigation(request):
                     "title": "Результаты по агитаторам",
                     "icon": "group",
                     "link": lambda request: "/dashboard/results-table/",
+                },
+                {
+                    "title": "Результаты по руководителям",
+                    "icon": "supervisor_account",
+                    "link": lambda request: "/dashboard/results-by-brigadiers/",
                 },
             ],
         },

@@ -579,3 +579,217 @@ def results_dashboard_callback(request, context):
     })
     
     return context
+
+
+def results_by_brigadiers_dashboard_callback(request, context):
+    """Дашборд с группировкой по руководителям"""
+    from .models import User, UIK, Voter
+    from django.db.models import Q, Count, Sum
+    
+    # Получаем всех бригадиров, у которых есть назначенные агитаторы
+    brigadiers_with_agitators = User.objects.filter(
+        role='brigadier',
+        assigned_agitators__isnull=False
+    ).distinct().prefetch_related('assigned_agitators')
+    
+    rows = []
+    total_plan = 0
+    total_fact = 0
+    total_plan_12_sep = 0
+    total_12_sep = 0
+    total_plan_13_sep = 0
+    total_13_sep = 0
+    total_plan_14_sep = 0
+    total_14_sep = 0
+    
+    for brigadier in brigadiers_with_agitators:
+        brigadier_total_plan = 0
+        brigadier_total_fact = 0
+        brigadier_plan_12_sep = 0
+        brigadier_12_sep = 0
+        brigadier_plan_13_sep = 0
+        brigadier_13_sep = 0
+        brigadier_plan_14_sep = 0
+        brigadier_14_sep = 0
+        
+        # Получаем УИК, где работает этот бригадир
+        uiks = UIK.objects.filter(
+            Q(brigadier=brigadier) | Q(additional_brigadiers=brigadier)
+        ).distinct().prefetch_related('agitators')
+        
+        for uik in uiks:
+            uik_total_plan = 0
+            uik_total_fact = 0
+            uik_plan_12_sep = 0
+            uik_12_sep = 0
+            uik_plan_13_sep = 0
+            uik_13_sep = 0
+            uik_plan_14_sep = 0
+            uik_14_sep = 0
+            
+            # Планы для УИК (берем из UIKResultsDaily если есть)
+            try:
+                uik_results = uik.uikresultsdaily_set.first()
+                if uik_results:
+                    uik_plan_12_sep = uik_results.plan_12_sep or 0
+                    uik_plan_13_sep = uik_results.plan_13_sep or 0
+                    uik_plan_14_sep = uik_results.plan_14_sep or 0
+                    uik_total_plan = uik_plan_12_sep + uik_plan_13_sep + uik_plan_14_sep
+            except:
+                pass
+            
+            # Агитаторы этого бригадира в этом УИК
+            agitators = brigadier.assigned_agitators.filter(
+                assigned_uiks_as_agitator=uik
+            )
+            
+            for agitator in agitators:
+                # Считаем факты по агитатору
+                fact_total = Voter.objects.filter(
+                    uik=uik, 
+                    agitator=agitator, 
+                    confirmed_by_brigadier=True
+                ).count()
+                
+                fact_12_sep = Voter.objects.filter(
+                    uik=uik, 
+                    agitator=agitator, 
+                    confirmed_by_brigadier=True,
+                    voting_date=date(2025, 9, 12)
+                ).count()
+                
+                fact_13_sep = Voter.objects.filter(
+                    uik=uik, 
+                    agitator=agitator, 
+                    confirmed_by_brigadier=True,
+                    voting_date=date(2025, 9, 13)
+                ).count()
+                
+                fact_14_sep = Voter.objects.filter(
+                    uik=uik, 
+                    agitator=agitator, 
+                    confirmed_by_brigadier=True,
+                    voting_date=date(2025, 9, 14)
+                ).count()
+                
+                # Процент выполнения плана (используем планы УИК)
+                plan_12_percent = round((fact_12_sep / uik_plan_12_sep * 100) if uik_plan_12_sep > 0 else 0, 1)
+                plan_13_percent = round((fact_13_sep / uik_plan_13_sep * 100) if uik_plan_13_sep > 0 else 0, 1)
+                plan_14_percent = round((fact_14_sep / uik_plan_14_sep * 100) if uik_plan_14_sep > 0 else 0, 1)
+                
+                rows.append({
+                    'row_type': 'agitator',
+                    'brigadier': brigadier.get_short_name(),
+                    'uik_number': uik.number,
+                    'agitator_name': agitator.get_short_name(),
+                    'fact_total': fact_total,
+                    'plan_total': '',
+                    'plan_12_sep': '',
+                    'fact_12_sep': fact_12_sep,
+                    'plan_12_percent': plan_12_percent,
+                    'plan_13_sep': '',
+                    'fact_13_sep': fact_13_sep,
+                    'plan_13_percent': plan_13_percent,
+                    'plan_14_sep': '',
+                    'fact_14_sep': fact_14_sep,
+                    'plan_14_percent': plan_14_percent,
+                })
+                
+                uik_total_fact += fact_total
+                uik_12_sep += fact_12_sep
+                uik_13_sep += fact_13_sep
+                uik_14_sep += fact_14_sep
+            
+            # Строка "Итого по УИК"
+            if uik_total_fact > 0:
+                uik_plan_12_percent = round((uik_12_sep / uik_plan_12_sep * 100) if uik_plan_12_sep > 0 else 0, 1)
+                uik_plan_13_percent = round((uik_13_sep / uik_plan_13_sep * 100) if uik_plan_13_sep > 0 else 0, 1)
+                uik_plan_14_percent = round((uik_14_sep / uik_plan_14_sep * 100) if uik_plan_14_sep > 0 else 0, 1)
+                uik_total_percent = round((uik_total_fact / uik_total_plan * 100) if uik_total_plan > 0 else 0, 1)
+                
+                rows.append({
+                    'row_type': 'uik_total',
+                    'brigadier': brigadier.get_short_name(),
+                    'uik_number': uik.number,
+                    'agitator_name': f'Итого по УИК {uik.number}',
+                    'fact_total': uik_total_fact,
+                    'plan_total': uik_total_plan,
+                    'plan_execution_percent': uik_total_percent,
+                    'plan_12_sep': uik_plan_12_sep,
+                    'fact_12_sep': uik_12_sep,
+                    'plan_12_percent': uik_plan_12_percent,
+                    'plan_13_sep': uik_plan_13_sep,
+                    'fact_13_sep': uik_13_sep,
+                    'plan_13_percent': uik_plan_13_percent,
+                    'plan_14_sep': uik_plan_14_sep,
+                    'fact_14_sep': uik_14_sep,
+                    'plan_14_percent': uik_plan_14_percent,
+                })
+                
+                brigadier_total_fact += uik_total_fact
+                brigadier_total_plan += uik_total_plan
+                brigadier_12_sep += uik_12_sep
+                brigadier_13_sep += uik_13_sep
+                brigadier_14_sep += uik_14_sep
+                brigadier_plan_12_sep += uik_plan_12_sep
+                brigadier_plan_13_sep += uik_plan_13_sep
+                brigadier_plan_14_sep += uik_plan_14_sep
+        
+        # Строка "ИТОГО по руководителю"
+        if brigadier_total_fact > 0:
+            brigadier_plan_12_percent = round((brigadier_12_sep / brigadier_plan_12_sep * 100) if brigadier_plan_12_sep > 0 else 0, 1)
+            brigadier_plan_13_percent = round((brigadier_13_sep / brigadier_plan_13_sep * 100) if brigadier_plan_13_sep > 0 else 0, 1)
+            brigadier_plan_14_percent = round((brigadier_14_sep / brigadier_plan_14_sep * 100) if brigadier_plan_14_sep > 0 else 0, 1)
+            brigadier_total_percent = round((brigadier_total_fact / brigadier_total_plan * 100) if brigadier_total_plan > 0 else 0, 1)
+            
+            rows.append({
+                'row_type': 'brigadier_total',
+                'brigadier': brigadier.get_short_name(),
+                'uik_number': '',
+                'agitator_name': f'ИТОГО по {brigadier.get_short_name()}',
+                'fact_total': brigadier_total_fact,
+                'plan_total': brigadier_total_plan,
+                'plan_execution_percent': brigadier_total_percent,
+                'plan_12_sep': brigadier_plan_12_sep,
+                'fact_12_sep': brigadier_12_sep,
+                'plan_12_percent': brigadier_plan_12_percent,
+                'plan_13_sep': brigadier_plan_13_sep,
+                'fact_13_sep': brigadier_13_sep,
+                'plan_13_percent': brigadier_plan_13_percent,
+                'plan_14_sep': brigadier_plan_14_sep,
+                'fact_14_sep': brigadier_14_sep,
+                'plan_14_percent': brigadier_plan_14_percent,
+            })
+            
+            total_fact += brigadier_total_fact
+            total_plan += brigadier_total_plan
+            total_12_sep += brigadier_12_sep
+            total_13_sep += brigadier_13_sep
+            total_14_sep += brigadier_14_sep
+            total_plan_12_sep += brigadier_plan_12_sep
+            total_plan_13_sep += brigadier_plan_13_sep
+            total_plan_14_sep += brigadier_plan_14_sep
+    
+    # Общие итоги
+    plan_execution_percent = round((total_fact / total_plan * 100) if total_plan > 0 else 0, 1)
+    plan_12_percent = round((total_12_sep / total_plan_12_sep * 100) if total_plan_12_sep > 0 else 0, 1)
+    plan_13_percent = round((total_13_sep / total_plan_13_sep * 100) if total_plan_13_sep > 0 else 0, 1)
+    plan_14_percent = round((total_14_sep / total_plan_14_sep * 100) if total_plan_14_sep > 0 else 0, 1)
+    
+    context.update({
+        'brigadier_rows': rows,
+        'total_plan': total_plan,
+        'total_fact': total_fact,
+        'plan_execution_percent': plan_execution_percent,
+        'total_plan_12_sep': total_plan_12_sep,
+        'total_12_sep': total_12_sep,
+        'plan_12_percent': plan_12_percent,
+        'total_plan_13_sep': total_plan_13_sep,
+        'total_13_sep': total_13_sep,
+        'plan_13_percent': plan_13_percent,
+        'total_plan_14_sep': total_plan_14_sep,
+        'total_14_sep': total_14_sep,
+        'plan_14_percent': plan_14_percent,
+    })
+    
+    return context

@@ -10,6 +10,7 @@ from elections.views import (
     analysis_dashboard_view,
     results_dashboard_view,
     results_table_dashboard_view,
+    results_by_brigadiers_dashboard_view,
     get_uik_agitators,
     get_agitator_uik,
 )
@@ -22,6 +23,7 @@ urlpatterns = [
     path('dashboard/analysis/', analysis_dashboard_view, name='analysis_dashboard'),
     path('dashboard/results/', results_dashboard_view, name='results_dashboard'),
     path('dashboard/results-table/', results_table_dashboard_view, name='results_table_dashboard'),
+    path('dashboard/results-by-brigadiers/', results_by_brigadiers_dashboard_view, name='results_by_brigadiers_dashboard'),
     path('admin/elections/voter/<int:voter_id>/get_uik_agitators/', get_uik_agitators, name='get_uik_agitators'),
     path('admin/elections/user/<int:user_id>/uik/', get_agitator_uik, name='get_agitator_uik'),
     path('admin/', admin.site.urls),
