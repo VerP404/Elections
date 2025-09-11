@@ -634,7 +634,7 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     import_form_class = ImportForm
     export_form_class = ExportForm
     list_display = ['number', 'address_short', 'brigadier_display', 'agitators_display', 'planned_voters_count', 'actual_voters_count', 'voters_difference', 'has_results']
-    list_filter = ['created_at']
+    list_filter = ['brigadier', 'created_at']
     search_fields = ['number', 'address']
     ordering = ['number']
     readonly_fields = ['created_by', 'updated_by', 'created_at', 'updated_at']
