@@ -606,12 +606,12 @@ def results_by_brigadiers_dashboard_callback(request, context):
         assigned_agitators__isnull=False
     ).distinct()
     
-    # Объединяем всех бригадиров
+    # Объединяем всех бригадиров и сортируем по фамилии
     all_brigadiers = (main_brigadiers | additional_brigadiers | brigadiers_with_agitators).distinct().prefetch_related(
         'assigned_agitators', 
         'assigned_uik_as_brigadier', 
         'additional_uiks'
-    )
+    ).order_by('last_name', 'first_name', 'middle_name')
     
     rows = []
     total_plan = 0
@@ -664,31 +664,31 @@ def results_by_brigadiers_dashboard_callback(request, context):
                 # Основной бригадир - берем агитаторов БЕЗ assigned_brigadiers ИЛИ с assigned_brigadiers=этот_бригадир
                 agitators = uik.agitators.filter(
                     Q(assigned_brigadiers__isnull=True) | Q(assigned_brigadiers=brigadier)
-                )
+                ).order_by('last_name', 'first_name', 'middle_name')
             else:
                 # Дополнительный бригадир - берем агитаторов С assigned_brigadiers=этот_бригадир
-                agitators = uik.agitators.filter(assigned_brigadiers=brigadier)
+                agitators = uik.agitators.filter(assigned_brigadiers=brigadier).order_by('last_name', 'first_name', 'middle_name')
             
-            # Планы для УИК считаем только по агитаторам этого бригадира
+            # Планы для УИК считаем по planned_date (планируемая дата голосования)
             uik_plan_12_sep = Voter.objects.filter(
                 uik=uik,
                 agitator__in=agitators,
-                voting_date=date(2025, 9, 12)
+                planned_date=date(2025, 9, 12)
             ).count()
             
             uik_plan_13_sep = Voter.objects.filter(
                 uik=uik,
                 agitator__in=agitators,
-                voting_date=date(2025, 9, 13)
+                planned_date=date(2025, 9, 13)
             ).count()
             
             uik_plan_14_sep = Voter.objects.filter(
                 uik=uik,
                 agitator__in=agitators,
-                voting_date=date(2025, 9, 14)
+                planned_date=date(2025, 9, 14)
             ).count()
             
-            # План для УИК считаем только по агитаторам этого бригадира
+            # Общий план для УИК считаем по всем избирателям агитаторов этого бригадира
             uik_total_plan = Voter.objects.filter(
                 uik=uik,
                 agitator__in=agitators
@@ -733,19 +733,19 @@ def results_by_brigadiers_dashboard_callback(request, context):
                 plan_12_sep = Voter.objects.filter(
                     uik=uik, 
                     agitator=agitator,
-                    voting_date=date(2025, 9, 12)
+                    planned_date=date(2025, 9, 12)
                 ).count()
                 
                 plan_13_sep = Voter.objects.filter(
                     uik=uik, 
                     agitator=agitator,
-                    voting_date=date(2025, 9, 13)
+                    planned_date=date(2025, 9, 13)
                 ).count()
                 
                 plan_14_sep = Voter.objects.filter(
                     uik=uik, 
                     agitator=agitator,
-                    voting_date=date(2025, 9, 14)
+                    planned_date=date(2025, 9, 14)
                 ).count()
                 
                 # Процент выполнения плана
