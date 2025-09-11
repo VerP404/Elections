@@ -178,6 +178,176 @@ def analysis_dashboard_callback(request, context):
     return context
 
 
+def results_table_dashboard_callback(request, context):
+    """Callback: табличный дашборд с расчетом фактов по реальным данным (Voter).
+
+    Требование: на каждый УИК три строки — по двум агитаторам и строка "Итого по УИК".
+    Планы показываются только в строке итога УИК. Факты считаются по подтвержденным голосованиям.
+    """
+    # Даты голосования (фиксированные требования домена)
+    allowed_dates = [
+        date(2025, 9, 12),
+        date(2025, 9, 13),
+        date(2025, 9, 14),
+    ]
+
+    # Загружаем справочники единожды
+    uiks = (
+        UIK.objects
+        .select_related('brigadier')
+        .prefetch_related('agitators')
+        .all()
+        .order_by('number')
+    )
+    daily_map = {d.uik_id: d for d in UIKResultsDaily.objects.select_related('uik').all()}
+
+    rows = []
+
+    # Итоговые счетчики
+    total_plan_all = 0
+    total_fact_all = 0
+    total_plan_12 = total_plan_13 = total_plan_14 = 0
+    total_fact_12 = total_fact_13 = total_fact_14 = 0
+
+    for i, uik in enumerate(uiks):
+        daily = daily_map.get(uik.id)
+
+        # План берем из UIKResultsDaily (если нет — нули)
+        plan_12 = daily.plan_12_sep if daily else 0
+        plan_13 = daily.plan_13_sep if daily else 0
+        plan_14 = daily.plan_14_sep if daily else 0
+        plan_total = plan_12 + plan_13 + plan_14
+
+        # Факт считаем только по реальным данным (избиратели с подтверждением и датой)
+        fact_12 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[0]).count()
+        fact_13 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[1]).count()
+        fact_14 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[2]).count()
+        fact_total = fact_12 + fact_13 + fact_14
+
+        # Проценты
+        total_percent = round((fact_total / plan_total * 100), 1) if plan_total > 0 else 0
+        p12 = round((fact_12 / plan_12 * 100), 1) if plan_12 > 0 else 0
+        p13 = round((fact_13 / plan_13 * 100), 1) if plan_13 > 0 else 0
+        p14 = round((fact_14 / plan_14 * 100), 1) if plan_14 > 0 else 0
+
+        # Бригадир и агитаторы
+        brigadier_name = uik.brigadier.get_short_name() if uik.brigadier else '-'
+        agitators_qs = list(uik.agitators.all()[:2])  # берем первых двух по условию
+
+        # Логика раскрашивания из results_dashboard.html
+        if plan_total == 0:
+            row_color = 'yellow'  # Желтая строка если план = 0
+        elif total_percent >= 100:
+            row_color = 'success'
+        elif total_percent >= 80:
+            row_color = 'warning'
+        else:
+            row_color = 'danger-light'
+
+        # Строка «Итого по УИК» (сначала)
+        rows.append({
+            'row_type': 'total',
+            'uik_number': uik.number,
+            'brigadier': brigadier_name,
+            'agitators': 'Итого по УИК',
+            'plan_total': plan_total,
+            'fact_total': fact_total,
+            'plan_execution_percent': total_percent,
+            'plan_12_sep': plan_12,
+            'fact_12_sep': fact_12,
+            'plan_12_percent': p12,
+            'plan_13_sep': plan_13,
+            'fact_13_sep': fact_13,
+            'plan_13_percent': p13,
+            'plan_14_sep': plan_14,
+            'fact_14_sep': fact_14,
+            'plan_14_percent': p14,
+            'row_color': row_color,
+        })
+
+        # Строки по каждому агитатору (под итогом УИК)
+        for ag in agitators_qs:
+            a_fact_12 = Voter.objects.filter(uik=uik, agitator=ag, confirmed_by_brigadier=True, voting_date=allowed_dates[0]).count()
+            a_fact_13 = Voter.objects.filter(uik=uik, agitator=ag, confirmed_by_brigadier=True, voting_date=allowed_dates[1]).count()
+            a_fact_14 = Voter.objects.filter(uik=uik, agitator=ag, confirmed_by_brigadier=True, voting_date=allowed_dates[2]).count()
+            a_fact_total = a_fact_12 + a_fact_13 + a_fact_14
+
+            rows.append({
+                'row_type': 'agitator',
+                'uik_number': uik.number,
+                'brigadier': brigadier_name,
+                'agitators': ag.get_short_name(),
+                'plan_total': '',
+                'fact_total': a_fact_total,
+                'plan_execution_percent': '',
+                'plan_12_sep': '',
+                'fact_12_sep': a_fact_12,
+                'plan_12_percent': '',
+                'plan_13_sep': '',
+                'fact_13_sep': a_fact_13,
+                'plan_13_percent': '',
+                'plan_14_sep': '',
+                'fact_14_sep': a_fact_14,
+                'plan_14_percent': '',
+                'row_color': '',
+            })
+
+        # Добавляем разделитель между УИК (кроме последнего)
+        if i < len(uiks) - 1:
+            rows.append({
+                'row_type': 'separator',
+                'uik_number': '',
+                'brigadier': '',
+                'agitators': '',
+                'plan_total': '',
+                'fact_total': '',
+                'plan_execution_percent': '',
+                'plan_12_sep': '',
+                'fact_12_sep': '',
+                'plan_12_percent': '',
+                'plan_13_sep': '',
+                'fact_13_sep': '',
+                'plan_13_percent': '',
+                'plan_14_sep': '',
+                'fact_14_sep': '',
+                'plan_14_percent': '',
+                'row_color': '',
+            })
+
+        # Итоги
+        total_plan_all += plan_total
+        total_fact_all += fact_total
+        total_plan_12 += plan_12
+        total_plan_13 += plan_13
+        total_plan_14 += plan_14
+        total_fact_12 += fact_12
+        total_fact_13 += fact_13
+        total_fact_14 += fact_14
+
+    total_percent_all = round((total_fact_all / total_plan_all * 100), 1) if total_plan_all > 0 else 0
+    total_p12 = round((total_fact_12 / total_plan_12 * 100), 1) if total_plan_12 > 0 else 0
+    total_p13 = round((total_fact_13 / total_plan_13 * 100), 1) if total_plan_13 > 0 else 0
+    total_p14 = round((total_fact_14 / total_plan_14 * 100), 1) if total_plan_14 > 0 else 0
+
+    context.update({
+        'uik_table_rows': rows,
+        'total_plan': total_plan_all,
+        'total_fact': total_fact_all,
+        'plan_execution_percent': total_percent_all,
+        'total_plan_12_sep': total_plan_12,
+        'total_plan_13_sep': total_plan_13,
+        'total_plan_14_sep': total_plan_14,
+        'total_12_sep': total_fact_12,
+        'total_13_sep': total_fact_13,
+        'total_14_sep': total_fact_14,
+        'plan_12_percent': total_p12,
+        'plan_13_percent': total_p13,
+        'plan_14_percent': total_p14,
+    })
+
+    return context
+
+
 def results_dashboard_callback(request, context):
     """Callback для дашборда результатов голосования"""
     # Получаем данные по дням из UIKResultsDaily

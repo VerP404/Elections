@@ -251,6 +251,11 @@ def get_sidebar_navigation(request):
                         "icon": "poll",
                         "link": lambda request: "/dashboard/results/",
                     },
+                    {
+                        "title": "Результаты по агитаторам",
+                        "icon": "group",
+                        "link": lambda request: "/dashboard/results-table/",
+                    },
                 ],
             },
         ]
@@ -344,6 +349,11 @@ def get_sidebar_navigation(request):
                     "title": "Результаты голосования",
                     "icon": "poll",
                     "link": lambda request: "/dashboard/results/",
+                },
+                {
+                    "title": "Результаты по агитаторам",
+                    "icon": "group",
+                    "link": lambda request: "/dashboard/results-table/",
                 },
             ],
         },

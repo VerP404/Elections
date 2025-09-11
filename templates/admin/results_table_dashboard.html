@@ -1,0 +1,202 @@
+{% extends 'admin/base_site.html' %}
+{% block extrastyle %}
+<style>
+    .content, .container, #content-main { max-width: 100% !important; width: 100% !important; margin: 0 !important; padding: 0 !important; }
+    .breadcrumbs, .px-4 .container.mb-12, .flex.flex-wrap, .bg-white.border-b.border-base-200, .container.flex.items-center.h-16, #header-inner { display: none !important; }
+    .px-4 { padding-left: 0 !important; padding-right: 0 !important; }
+    .dashboard-header { 
+        display: flex; 
+        justify-content: space-between; 
+        align-items: center; 
+        padding: 10px 16px; 
+        background: #f8f9fa; 
+        border-bottom: 2px solid #dee2e6;
+        position: sticky;
+        top: 0;
+        z-index: 20;
+    }
+    .dashboard-header h1 { margin: 0; font-size: 1.5rem; font-weight: 600; color: #333; }
+    .dashboard-back { background: #007bff; color: #fff; padding: 8px 16px; border-radius: 4px; text-decoration: none; }
+
+    .table-container { 
+        padding: 12px; 
+        height: calc(100vh - 120px);
+        display: flex;
+        flex-direction: column;
+    }
+    .table-wrapper {
+        flex: 1;
+        overflow: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+    }
+    table.uik-table { 
+        width: 100%; 
+        border-collapse: collapse; 
+        font-size: 0.85rem;
+        position: relative;
+    }
+    table.uik-table thead {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    table.uik-table th { 
+        background: #f1f5f9; 
+        padding: 8px 6px; 
+        border-bottom: 2px solid #e2e8f0; 
+        text-align: center; 
+        font-weight: 600; 
+        color: #475569;
+        position: sticky;
+        top: 0;
+        z-index: 10;
+    }
+    table.uik-table td { padding: 8px 6px; border-bottom: 1px solid #e2e8f0; text-align: center; }
+    tr.row-success { background: linear-gradient(90deg, rgba(16, 185, 129, 0.1) 0%, rgba(5, 150, 105, 0.05) 100%); }
+    tr.row-warning { background: linear-gradient(90deg, rgba(245, 158, 11, 0.1) 0%, rgba(217, 119, 6, 0.05) 100%); }
+    tr.row-danger-light { background: linear-gradient(90deg, rgba(239, 68, 68, 0.1) 0%, rgba(220, 38, 38, 0.05) 100%); }
+    tr.row-yellow { background: linear-gradient(90deg, rgba(251, 191, 36, 0.1) 0%, rgba(245, 158, 11, 0.05) 100%); border-left: 3px solid #f59e0b; }
+    tr.row-agitator { background: rgba(59,130,246,.03); border-left: 3px solid #3b82f6; }
+    tr.row-agitator td:first-child { padding-left: 20px; }
+    tr.uik-separator { height: 8px; background: #f1f5f9; }
+    tr.uik-separator td { border: none; padding: 0; }
+    tfoot td { font-weight: 700; background: #fff7ed; }
+    .badge { display:inline-block; padding:2px 6px; border-radius:6px; font-weight:600; font-size:.75rem; }
+    .badge.success { background:#dcfce7; color:#166534; }
+    .badge.warning { background:#fef3c7; color:#92400e; }
+    .badge.danger { background:#fee2e2; color:#991b1b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+  <h1>Результаты по УИК, бригадирам и агитаторам</h1>
+  <a href="/admin/" class="dashboard-back">← Назад</a>
+  </div>
+  <div class="table-container">
+    <div class="table-wrapper">
+      <table class="uik-table">
+      <thead>
+        <tr>
+          <th>УИК</th>
+          <th>Бригадир</th>
+          <th>Агитатор(ы)</th>
+          <th>Общий план</th>
+          <th>Общий факт</th>
+          <th>Общий %</th>
+          <th>План 12.09</th>
+          <th>Факт 12.09</th>
+          <th>%</th>
+          <th>План 13.09</th>
+          <th>Факт 13.09</th>
+          <th>%</th>
+          <th>План 14.09</th>
+          <th>Факт 14.09</th>
+          <th>%</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in uik_table_rows %}
+        {% if r.row_type == 'separator' %}
+        <tr class="uik-separator">
+          <td colspan="15"></td>
+        </tr>
+        {% else %}
+        <tr class="{% if r.row_type == 'total' %}row-{{ r.row_color }}{% else %}row-agitator{% endif %}">
+          <td>
+            {% if r.row_type == 'total' %}
+              <strong>№{{ r.uik_number }}</strong>
+            {% else %}
+              <span style="color: #6b7280; font-size: 0.8rem;">└─</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.row_type == 'total' %}{{ r.brigadier }}{% endif %}
+          </td>
+          <td>
+            {% if r.row_type == 'agitator' %}
+              <span style="color: #2563eb; font-weight: 500;">{{ r.agitators }}</span>
+            {% else %}
+              <strong>{{ r.agitators }}</strong>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.row_type == 'total' %}<strong>{{ r.plan_total }}</strong>{% else %}-{% endif %}
+          </td>
+          <td><strong>{{ r.fact_total }}</strong></td>
+          <td>
+            {% if r.row_type == 'total' %}
+              <span class="badge {% if r.plan_execution_percent >= 100 %}success{% elif r.plan_execution_percent >= 80 %}warning{% else %}danger{% endif %}">{{ r.plan_execution_percent }}%</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>
+            {% if r.row_type == 'total' %}{{ r.plan_12_sep }}{% else %}-{% endif %}
+          </td>
+          <td>{{ r.fact_12_sep }}</td>
+          <td>
+            {% if r.row_type == 'total' %}
+              <span class="badge {% if r.plan_12_percent >= 100 %}success{% elif r.plan_12_percent >= 80 %}warning{% else %}danger{% endif %}">{{ r.plan_12_percent }}%</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>
+            {% if r.row_type == 'total' %}{{ r.plan_13_sep }}{% else %}-{% endif %}
+          </td>
+          <td>{{ r.fact_13_sep }}</td>
+          <td>
+            {% if r.row_type == 'total' %}
+              <span class="badge {% if r.plan_13_percent >= 100 %}success{% elif r.plan_13_percent >= 80 %}warning{% else %}danger{% endif %}">{{ r.plan_13_percent }}%</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+          <td>
+            {% if r.row_type == 'total' %}{{ r.plan_14_sep }}{% else %}-{% endif %}
+          </td>
+          <td>{{ r.fact_14_sep }}</td>
+          <td>
+            {% if r.row_type == 'total' %}
+              <span class="badge {% if r.plan_14_percent >= 100 %}success{% elif r.plan_14_percent >= 80 %}warning{% else %}danger{% endif %}">{{ r.plan_14_percent }}%</span>
+            {% else %}
+              -
+            {% endif %}
+          </td>
+        </tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td colspan="3" style="text-align:right;">Итого:</td>
+          <td>{{ total_plan }}</td>
+          <td>{{ total_fact }}</td>
+          <td>
+            <span class="badge {% if plan_execution_percent >= 100 %}success{% elif plan_execution_percent >= 80 %}warning{% else %}danger{% endif %}">{{ plan_execution_percent }}%</span>
+          </td>
+          <td>{{ total_plan_12_sep }}</td>
+          <td>{{ total_12_sep }}</td>
+          <td>
+            <span class="badge {% if plan_12_percent >= 100 %}success{% elif plan_12_percent >= 80 %}warning{% else %}danger{% endif %}">{{ plan_12_percent }}%</span>
+          </td>
+          <td>{{ total_plan_13_sep }}</td>
+          <td>{{ total_13_sep }}</td>
+          <td>
+            <span class="badge {% if plan_13_percent >= 100 %}success{% elif plan_13_percent >= 80 %}warning{% else %}danger{% endif %}">{{ plan_13_percent }}%</span>
+          </td>
+          <td>{{ total_plan_14_sep }}</td>
+          <td>{{ total_14_sep }}</td>
+          <td>
+            <span class="badge {% if plan_14_percent >= 100 %}success{% elif plan_14_percent >= 80 %}warning{% else %}danger{% endif %}">{{ plan_14_percent }}%</span>
+          </td>
+        </tr>
+      </tfoot>
+      </table>
+    </div>
+  </div>
+{% endblock %}
+
+

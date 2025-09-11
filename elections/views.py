@@ -1,7 +1,11 @@
 from django.shortcuts import render, get_object_or_404
 from django.http import JsonResponse
 from django.contrib.auth.decorators import login_required
-from .dashboard import analysis_dashboard_callback, results_dashboard_callback
+from .dashboard import (
+    analysis_dashboard_callback,
+    results_dashboard_callback,
+    results_table_dashboard_callback,
+)
 from .models import Voter, User, UIK
 
 # Create your views here.
@@ -17,6 +21,12 @@ def results_dashboard_view(request):
     """View для дашборда результатов голосования"""
     context = results_dashboard_callback(request, {})
     return render(request, 'admin/results_dashboard.html', context)
+
+@login_required(login_url='/admin/login/')
+def results_table_dashboard_view(request):
+    """Табличный дашборд с расчетом фактов по подтвержденным голосованиям."""
+    context = results_table_dashboard_callback(request, {})
+    return render(request, 'admin/results_table_dashboard.html', context)
 
 @login_required(login_url='/admin/login/')
 def get_uik_agitators(request, voter_id):
