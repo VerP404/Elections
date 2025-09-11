@@ -586,21 +586,32 @@ def results_by_brigadiers_dashboard_callback(request, context):
     from .models import User, UIK, Voter
     from django.db.models import Q, Count, Sum
     
-    # Получаем ВСЕХ бригадиров, которые работают в УИК (основных и дополнительных)
-    # Основные бригадиры
+    # Получаем ВСЕХ бригадиров, которые работают в системе
+    # 1. Основные бригадиры (назначены как brigadier в УИК)
     main_brigadiers = User.objects.filter(
         role='brigadier',
-        assigned_uik_as_brigadier__isnull=False  # У которых есть УИК как основной бригадир
+        assigned_uik_as_brigadier__isnull=False
     ).distinct()
     
-    # Дополнительные бригадиры
+    # 2. Дополнительные бригадиры (can_be_additional=True и назначены в additional_brigadiers)
     additional_brigadiers = User.objects.filter(
         role='brigadier',
-        additional_uiks__isnull=False  # Которые назначены как дополнительные
+        can_be_additional=True,
+        additional_uiks__isnull=False
+    ).distinct()
+    
+    # 3. Бригадиры с назначенными агитаторами (assigned_agitators)
+    brigadiers_with_agitators = User.objects.filter(
+        role='brigadier',
+        assigned_agitators__isnull=False
     ).distinct()
     
     # Объединяем всех бригадиров
-    all_brigadiers = (main_brigadiers | additional_brigadiers).distinct().prefetch_related('assigned_agitators', 'assigned_uik_as_brigadier', 'additional_uiks')
+    all_brigadiers = (main_brigadiers | additional_brigadiers | brigadiers_with_agitators).distinct().prefetch_related(
+        'assigned_agitators', 
+        'assigned_uik_as_brigadier', 
+        'additional_uiks'
+    )
     
     rows = []
     total_plan = 0
@@ -622,9 +633,14 @@ def results_by_brigadiers_dashboard_callback(request, context):
         brigadier_plan_14_sep = 0
         brigadier_14_sep = 0
         
-        # Получаем УИК, где работает этот бригадир (как основной или как дополнительный)
+        # Получаем УИК, где работает этот бригадир
+        # Используем один запрос с Q объектами для объединения всех условий
+        from django.db.models import Q
+        
         uiks = UIK.objects.filter(
-            Q(brigadier=brigadier) | Q(additional_brigadiers=brigadier)
+            Q(brigadier=brigadier) |  # Как основной бригадир
+            Q(additional_brigadiers=brigadier) |  # Как дополнительный бригадир
+            Q(agitators__in=brigadier.assigned_agitators.all())  # УИК с назначенными агитаторами
         ).distinct().prefetch_related('agitators')
         
         # Сначала собираем все данные по бригадиру
@@ -660,6 +676,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
             uik_total_plan = Voter.objects.filter(uik=uik).count()
             
             # Агитаторы этого бригадира в этом УИК
+            # Получаем всех агитаторов, которые назначены этому бригадиру и работают в этом УИК
             agitators = brigadier.assigned_agitators.filter(
                 assigned_uiks_as_agitator=uik
             )
