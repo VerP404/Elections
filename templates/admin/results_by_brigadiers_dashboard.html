@@ -145,7 +145,7 @@
             {% elif r.row_type == 'uik_total' %}
               <strong>{{ r.plan_12_sep }}</strong>
             {% else %}
-              {{ r.plan_12_sep|default:"" }}
+              {{ r.plan_12_sep|default:0 }}
             {% endif %}
           </td>
           <td>{{ r.fact_12_sep }}</td>
@@ -164,7 +164,7 @@
             {% elif r.row_type == 'uik_total' %}
               <strong>{{ r.plan_13_sep }}</strong>
             {% else %}
-              {{ r.plan_13_sep|default:"" }}
+              {{ r.plan_13_sep|default:0 }}
             {% endif %}
           </td>
           <td>{{ r.fact_13_sep }}</td>
@@ -183,7 +183,7 @@
             {% elif r.row_type == 'uik_total' %}
               <strong>{{ r.plan_14_sep }}</strong>
             {% else %}
-              {{ r.plan_14_sep|default:"" }}
+              {{ r.plan_14_sep|default:0 }}
             {% endif %}
           </td>
           <td>{{ r.fact_14_sep }}</td>

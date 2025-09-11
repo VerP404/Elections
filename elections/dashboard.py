@@ -587,6 +587,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
     from django.db.models import Q, Count, Sum
     
     # Получаем всех бригадиров (основных и дополнительных), у которых есть назначенные агитаторы
+    # Получаем всех бригадиров, у которых есть агитаторы (независимо от факта)
     brigadiers_with_agitators = User.objects.filter(
         role='brigadier',
         assigned_agitators__isnull=False
@@ -633,16 +634,23 @@ def results_by_brigadiers_dashboard_callback(request, context):
             is_main_brigadier = uik.brigadier == brigadier
             role_suffix = " (основной)" if is_main_brigadier else " (дополнительный)"
             
-            # Планы для УИК (берем из UIKResultsDaily если есть)
-            try:
-                uik_results = uik.uikresultsdaily_set.first()
-                if uik_results:
-                    uik_plan_12_sep = uik_results.plan_12_sep or 0
-                    uik_plan_13_sep = uik_results.plan_13_sep or 0
-                    uik_plan_14_sep = uik_results.plan_14_sep or 0
-                    uik_total_plan = uik_plan_12_sep + uik_plan_13_sep + uik_plan_14_sep
-            except:
-                pass
+            # Планы для УИК считаем из базы избирателей (все избиратели этого УИК)
+            uik_plan_12_sep = Voter.objects.filter(
+                uik=uik,
+                voting_date=date(2025, 9, 12)
+            ).count()
+            
+            uik_plan_13_sep = Voter.objects.filter(
+                uik=uik,
+                voting_date=date(2025, 9, 13)
+            ).count()
+            
+            uik_plan_14_sep = Voter.objects.filter(
+                uik=uik,
+                voting_date=date(2025, 9, 14)
+            ).count()
+            
+            uik_total_plan = Voter.objects.filter(uik=uik).count()
             
             # Агитаторы этого бригадира в этом УИК
             agitators = brigadier.assigned_agitators.filter(
@@ -679,27 +687,35 @@ def results_by_brigadiers_dashboard_callback(request, context):
                     voting_date=date(2025, 9, 14)
                 ).count()
                 
-                # Если у агитатора есть факт, то план должен быть равен факту
-                if fact_total > 0:
-                    # План агитатора = факт агитатора
-                    agitator_plan_12_sep = fact_12_sep
-                    agitator_plan_13_sep = fact_13_sep
-                    agitator_plan_14_sep = fact_14_sep
-                    agitator_total_plan = fact_total
-                    
-                    # Процент выполнения плана = 100% (план = факт)
-                    plan_12_percent = 100.0
-                    plan_13_percent = 100.0 if fact_13_sep > 0 else 0.0
-                    plan_14_percent = 100.0 if fact_14_sep > 0 else 0.0
-                else:
-                    # Если нет факта, то нет и плана
-                    agitator_plan_12_sep = 0
-                    agitator_plan_13_sep = 0
-                    agitator_plan_14_sep = 0
-                    agitator_total_plan = 0
-                    plan_12_percent = 0.0
-                    plan_13_percent = 0.0
-                    plan_14_percent = 0.0
+                # Считаем план агитатора из базы избирателей (все избиратели этого агитатора в этом УИК)
+                plan_total = Voter.objects.filter(
+                    uik=uik, 
+                    agitator=agitator
+                ).count()
+                
+                plan_12_sep = Voter.objects.filter(
+                    uik=uik, 
+                    agitator=agitator,
+                    voting_date=date(2025, 9, 12)
+                ).count()
+                
+                plan_13_sep = Voter.objects.filter(
+                    uik=uik, 
+                    agitator=agitator,
+                    voting_date=date(2025, 9, 13)
+                ).count()
+                
+                plan_14_sep = Voter.objects.filter(
+                    uik=uik, 
+                    agitator=agitator,
+                    voting_date=date(2025, 9, 14)
+                ).count()
+                
+                # Процент выполнения плана
+                plan_12_percent = round((fact_12_sep / plan_12_sep * 100) if plan_12_sep > 0 else 0, 1)
+                plan_13_percent = round((fact_13_sep / plan_13_sep * 100) if plan_13_sep > 0 else 0, 1)
+                plan_14_percent = round((fact_14_sep / plan_14_sep * 100) if plan_14_sep > 0 else 0, 1)
+                plan_total_percent = round((fact_total / plan_total * 100) if plan_total > 0 else 0, 1)
                 
                 agitator_data.append({
                     'row_type': 'agitator',
@@ -707,14 +723,15 @@ def results_by_brigadiers_dashboard_callback(request, context):
                     'uik_number': f'|____',  # Символ для агитатора
                     'agitator_name': agitator.get_short_name(),
                     'fact_total': fact_total,
-                    'plan_total': agitator_total_plan,
-                    'plan_12_sep': agitator_plan_12_sep,
+                    'plan_total': plan_total,
+                    'plan_execution_percent': plan_total_percent,  # ОБЩИЙ ПРОЦЕНТ
+                    'plan_12_sep': plan_12_sep,
                     'fact_12_sep': fact_12_sep,
                     'plan_12_percent': plan_12_percent,
-                    'plan_13_sep': agitator_plan_13_sep,
+                    'plan_13_sep': plan_13_sep,
                     'fact_13_sep': fact_13_sep,
                     'plan_13_percent': plan_13_percent,
-                    'plan_14_sep': agitator_plan_14_sep,
+                    'plan_14_sep': plan_14_sep,
                     'fact_14_sep': fact_14_sep,
                     'plan_14_percent': plan_14_percent,
                 })
@@ -724,14 +741,8 @@ def results_by_brigadiers_dashboard_callback(request, context):
                 uik_13_sep += fact_13_sep
                 uik_14_sep += fact_14_sep
             
-            # Сохраняем данные по УИК
-            if uik_total_fact > 0:
-                # Если план = 0, а факт > 0, то план должен быть равен факту
-                if uik_total_plan == 0:
-                    uik_total_plan = uik_total_fact
-                    uik_plan_12_sep = uik_12_sep
-                    uik_plan_13_sep = uik_13_sep
-                    uik_plan_14_sep = uik_14_sep
+            # Сохраняем данные по УИК (если есть план или факт)
+            if uik_total_plan > 0 or uik_total_fact > 0:
                 
                 uik_plan_12_percent = round((uik_12_sep / uik_plan_12_sep * 100) if uik_plan_12_sep > 0 else 0, 1)
                 uik_plan_13_percent = round((uik_13_sep / uik_plan_13_sep * 100) if uik_plan_13_sep > 0 else 0, 1)
@@ -769,14 +780,8 @@ def results_by_brigadiers_dashboard_callback(request, context):
                 brigadier_plan_13_sep += uik_plan_13_sep
                 brigadier_plan_14_sep += uik_plan_14_sep
         
-        # Добавляем строку бригадира (только если есть данные)
-        if brigadier_total_fact > 0:
-            # Если план = 0, а факт > 0, то план должен быть равен факту
-            if brigadier_total_plan == 0:
-                brigadier_total_plan = brigadier_total_fact
-                brigadier_plan_12_sep = brigadier_12_sep
-                brigadier_plan_13_sep = brigadier_13_sep
-                brigadier_plan_14_sep = brigadier_14_sep
+        # Добавляем строку бригадира (если есть план или факт)
+        if brigadier_total_plan > 0 or brigadier_total_fact > 0:
             
             brigadier_plan_12_percent = round((brigadier_12_sep / brigadier_plan_12_sep * 100) if brigadier_plan_12_sep > 0 else 0, 1)
             brigadier_plan_13_percent = round((brigadier_13_sep / brigadier_plan_13_sep * 100) if brigadier_plan_13_sep > 0 else 0, 1)
