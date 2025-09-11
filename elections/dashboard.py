@@ -655,31 +655,44 @@ def results_by_brigadiers_dashboard_callback(request, context):
             uik_plan_14_sep = 0
             uik_14_sep = 0
             
-            # Не нужно указывать роль - все бригадиры равны
+            # Агитаторы этого бригадира в этом УИК
+            # Логика: 
+            # - Если бригадир основной (brigadier=uik.brigadier), то берем агитаторов БЕЗ assigned_brigadiers ИЛИ с assigned_brigadiers=этот_бригадир
+            # - Если бригадир дополнительный, то берем агитаторов С assigned_brigadiers=этот_бригадир
             
-            # Планы для УИК считаем из базы избирателей (все избиратели этого УИК)
+            if uik.brigadier == brigadier:
+                # Основной бригадир - берем агитаторов БЕЗ assigned_brigadiers ИЛИ с assigned_brigadiers=этот_бригадир
+                agitators = uik.agitators.filter(
+                    Q(assigned_brigadiers__isnull=True) | Q(assigned_brigadiers=brigadier)
+                )
+            else:
+                # Дополнительный бригадир - берем агитаторов С assigned_brigadiers=этот_бригадир
+                agitators = uik.agitators.filter(assigned_brigadiers=brigadier)
+            
+            # Планы для УИК считаем только по агитаторам этого бригадира
             uik_plan_12_sep = Voter.objects.filter(
                 uik=uik,
+                agitator__in=agitators,
                 voting_date=date(2025, 9, 12)
             ).count()
             
             uik_plan_13_sep = Voter.objects.filter(
                 uik=uik,
+                agitator__in=agitators,
                 voting_date=date(2025, 9, 13)
             ).count()
             
             uik_plan_14_sep = Voter.objects.filter(
                 uik=uik,
+                agitator__in=agitators,
                 voting_date=date(2025, 9, 14)
             ).count()
             
-            uik_total_plan = Voter.objects.filter(uik=uik).count()
-            
-            # Агитаторы этого бригадира в этом УИК
-            # Получаем всех агитаторов, которые назначены этому бригадиру и работают в этом УИК
-            agitators = brigadier.assigned_agitators.filter(
-                assigned_uiks_as_agitator=uik
-            )
+            # План для УИК считаем только по агитаторам этого бригадира
+            uik_total_plan = Voter.objects.filter(
+                uik=uik,
+                agitator__in=agitators
+            ).count()
             
             agitator_data = []
             for agitator in agitators:
