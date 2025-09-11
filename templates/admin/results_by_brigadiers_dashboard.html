@@ -104,11 +104,11 @@
           </td>
           <td>
             {% if r.row_type == 'brigadier_total' %}
-              -
+              {{ r.uik_number }}
             {% elif r.row_type == 'uik_total' %}
-              <strong>№{{ r.uik_number }}</strong>
+              <strong>{{ r.uik_number }}</strong>
             {% else %}
-              №{{ r.uik_number }}
+              {{ r.uik_number }}
             {% endif %}
           </td>
           <td>
@@ -126,7 +126,7 @@
             {% elif r.row_type == 'uik_total' %}
               <strong>{{ r.plan_total|default:"" }}</strong>
             {% else %}
-              -
+              {{ r.plan_total|default:"" }}
             {% endif %}
           </td>
           <td><strong>{{ r.fact_total }}</strong></td>
@@ -136,7 +136,7 @@
             {% elif r.row_type == 'uik_total' %}
               <span class="badge {% if r.plan_execution_percent >= 100 %}success{% elif r.plan_execution_percent >= 80 %}warning{% else %}danger{% endif %}">{{ r.plan_execution_percent }}%</span>
             {% else %}
-              -
+              <span class="badge {% if r.plan_execution_percent >= 100 %}success{% elif r.plan_execution_percent >= 80 %}warning{% else %}danger{% endif %}">{{ r.plan_execution_percent }}%</span>
             {% endif %}
           </td>
           <td>
@@ -145,7 +145,7 @@
             {% elif r.row_type == 'uik_total' %}
               <strong>{{ r.plan_12_sep }}</strong>
             {% else %}
-              {{ r.plan_12_sep }}
+              {{ r.plan_12_sep|default:"" }}
             {% endif %}
           </td>
           <td>{{ r.fact_12_sep }}</td>
@@ -164,7 +164,7 @@
             {% elif r.row_type == 'uik_total' %}
               <strong>{{ r.plan_13_sep }}</strong>
             {% else %}
-              {{ r.plan_13_sep }}
+              {{ r.plan_13_sep|default:"" }}
             {% endif %}
           </td>
           <td>{{ r.fact_13_sep }}</td>
@@ -183,7 +183,7 @@
             {% elif r.row_type == 'uik_total' %}
               <strong>{{ r.plan_14_sep }}</strong>
             {% else %}
-              {{ r.plan_14_sep }}
+              {{ r.plan_14_sep|default:"" }}
             {% endif %}
           </td>
           <td>{{ r.fact_14_sep }}</td>
