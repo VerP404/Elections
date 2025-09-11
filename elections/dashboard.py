@@ -273,12 +273,8 @@ def results_table_dashboard_callback(request, context):
 
         # Строки по каждому агитатору с указанием руководителя
         for ag in uik.agitators.all():
-            # Ищем, кто управляет этим агитатором
-            managing_brigadier = None
-            for brigadier in all_brigadiers:
-                if brigadier.assigned_agitators.filter(id=ag.id).exists():
-                    managing_brigadier = brigadier
-                    break
+            # Ищем, кто управляет этим агитатором среди ВСЕХ бригадиров в системе
+            managing_brigadier = ag.assigned_brigadiers.first()  # Берем первого руководителя
             
             managing_brigadier_name = managing_brigadier.get_short_name() if managing_brigadier else '-'
             
