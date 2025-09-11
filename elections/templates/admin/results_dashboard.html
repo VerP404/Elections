@@ -393,7 +393,6 @@
         font-size: 0.875rem;
         line-height: 1.4;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-        white-space: nowrap;
         transition: opacity 0.3s ease, visibility 0.3s ease;
         pointer-events: none;
         max-width: 300px;
@@ -403,12 +402,12 @@
     .tooltip-content::after {
         content: '';
         position: absolute;
-        top: 100%;
+        bottom: 100%;
         left: 50%;
         margin-left: -5px;
         border-width: 5px;
         border-style: solid;
-        border-color: #1f2937 transparent transparent transparent;
+        border-color: transparent transparent #1f2937 transparent;
     }
     
     .uik-tooltip:hover .tooltip-content {
@@ -435,6 +434,10 @@
     
     .tooltip-value {
         color: #f9fafb;
+    }
+    
+    .tooltip-info {
+        white-space: nowrap;
     }
     
     @media (max-width: 1200px) {
@@ -626,13 +629,18 @@
                                 <div class="tooltip-content">
                                     <div class="tooltip-title">УИК №{{ uik.uik_number }}</div>
                                     <div class="tooltip-info">
-                                        <span class="tooltip-label">Бригадир:</span>
                                         <span class="tooltip-value">{{ uik.brigadier }}</span>
                                     </div>
+                                    {% if uik.agitators_list %}
                                     <div class="tooltip-info">
                                         <span class="tooltip-label">Агитаторы:</span>
-                                        <span class="tooltip-value">{{ uik.agitators }}</span>
                                     </div>
+                                    {% for agitator in uik.agitators_list %}
+                                    <div class="tooltip-info" style="margin-left: 10px;">
+                                        <span class="tooltip-value">• {{ agitator }}</span>
+                                    </div>
+                                    {% endfor %}
+                                    {% endif %}
                                 </div>
                             </td>
                             <td class="total-column"><strong>{{ uik.plan_total }}</strong></td>

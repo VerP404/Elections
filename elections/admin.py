@@ -586,7 +586,19 @@ class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
         except ValidationError as e:
             from django.contrib import messages
             messages.error(request, str(e))
-            return self.response_add(request, None, extra_context)
+            # Возвращаем форму с ошибками вместо response_add
+            form = self.get_form(request, obj=None)
+            return self.render_change_form(request, context={'form': form, 'errors': getattr(e, 'message_dict', {})}, change=False)
+        except Exception as e:
+            from django.contrib import messages
+            from django.db.models.fields.related_descriptors import RelatedObjectDoesNotExist
+            if isinstance(e, RelatedObjectDoesNotExist):
+                messages.error(request, "Ошибка: не указан УИК. Поле 'УИК' является обязательным для создания избирателя.")
+            else:
+                messages.error(request, f"Ошибка при создании записи: {str(e)}")
+            # Возвращаем форму с ошибками
+            form = self.get_form(request, obj=None)
+            return self.render_change_form(request, context={'form': form}, change=False)
     
     def change_view(self, request, object_id, form_url='', extra_context=None):
         """Обработка ошибок при изменении"""
@@ -882,13 +894,13 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     export_form_class = ExportForm
     # export_form_class = SelectableFieldsExportForm  # Альтернативный вариант с выбором полей
     
-    list_display = ['id', 'full_name', 'birth_date_display', 'uik', 'brigadier_display', 'agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
-    list_filter = ['voting_method', 'confirmed_by_brigadier', 'uik', 'agitator', 'planned_date', 'voting_date', 'created_at']
+    list_display = ['id', 'full_name', 'birth_date_display', 'uik', 'brigadier_display', 'agitator', 'is_agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
+    list_filter = ['voting_method', 'confirmed_by_brigadier', 'is_agitator', 'uik', 'uik__brigadier', 'agitator', 'planned_date', 'voting_date', 'created_at']
     search_fields = ['id', 'last_name', 'first_name', 'middle_name']
-    list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier']
+    list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'is_agitator']
     list_per_page = 50
     autocomplete_fields = ['agitator']
-    
+    ordering = ['id']
     # Форматы для импорта-экспорта
     formats = [XLSX, CSV]
     
@@ -1015,21 +1027,31 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             if updated_count == 0 and error_count == 0:
                 messages.info(request, "Нет изменений для сохранения")
         
-        return super().changelist_view(request, extra_context)
-    
-    def add_view(self, request, form_url='', extra_context=None):
-        """Обработка создания новой записи избирателя"""
         try:
-            return super().add_view(request, form_url, extra_context)
-        except Exception as e:
-            from django.contrib import messages
-            error_msg = str(e)
-            if "RelatedObjectDoesNotExist" in error_msg and "uik" in error_msg:
-                messages.error(request, "Ошибка: не указан УИК. Поле 'УИК' является обязательным для создания избирателя.")
+            return super().changelist_view(request, extra_context)
+        except ValueError as e:
+            # Обрабатываем ошибку "VoterForm has no field named 'agitator'"
+            if "'VoterForm' has no field named 'agitator'" in str(e):
+                from django.contrib import messages
+                messages.error(
+                    request, 
+                    "❌ Ошибка: Некоторые агитаторы не имеют назначенного УИК. "
+                    "Сначала назначьте агитаторов в УИК через раздел 'УИК', а затем сохраняйте избирателей."
+                )
+                # Возвращаем форму с ошибками
+                return self.response_post_save_change(request, None)
             else:
-                messages.error(request, f"Ошибка при создании записи: {error_msg}")
-            return self.response_add(request, None, extra_context)
+                raise e
+        except ValidationError as e:
+            # Обрабатываем ошибки валидации
+            from django.contrib import messages
+            for field, errors in e.message_dict.items():
+                for error in errors:
+                    messages.error(request, f"Ошибка валидации: {error}")
+            return self.response_post_save_change(request, None)
     
+    
+
     def get_fieldsets(self, request, obj=None):
         """Динамические поля в зависимости от роли"""
         base_fields = (
@@ -1041,8 +1063,8 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             return (
                 ('Персональные данные', {'fields': base_fields}),
                 ('Планирование', {
-                    'fields': ('agitator', 'uik', 'planned_date'),
-                    'description': 'Вы можете планировать голосование избирателей. УИК автоматически заполнится при выборе агитатора.'
+                    'fields': ('agitator', 'planned_date'),
+                    'description': 'Выберите агитатора. УИК автоматически заполнится из УИК агитатора.'
                 }),
             )
         
@@ -1050,8 +1072,8 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             return (
                 ('Персональные данные', {'fields': base_fields}),
                 ('Планирование', {
-                    'fields': ('agitator', 'uik', 'planned_date'),
-                    'description': 'УИК автоматически заполнится при выборе агитатора.'
+                    'fields': ('agitator', 'planned_date'),
+                    'description': 'Выберите агитатора. УИК автоматически заполнится из УИК агитатора.'
                 }),
                 ('Голосование', {
                     'fields': ('voting_date', 'voting_method', 'confirmed_by_brigadier'),
@@ -1063,8 +1085,8 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             return (
                 ('Персональные данные', {'fields': base_fields}),
                 ('Планирование', {
-                    'fields': ('agitator', 'uik', 'planned_date'),
-                    'description': 'УИК автоматически заполнится при выборе агитатора.'
+                    'fields': ('agitator', 'planned_date'),
+                    'description': 'Выберите агитатора. УИК автоматически заполнится из УИК агитатора.'
                 }),
                 ('Голосование', {'fields': ('voting_date', 'voting_method', 'confirmed_by_brigadier')}),
             )
@@ -1092,16 +1114,21 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         return qs
     
     def save_model(self, request, obj, form, change):
-        """Сохранение с проверкой прав"""
+        """Сохранение с проверкой прав и УИК агитатора"""
         # Сохраняем запрос для валидации
         obj._request = request
         
-        # Проверяем обязательные поля при создании
-        if not change:  # Создание новой записи
-            if not obj.uik:
-                from django.contrib import messages
-                messages.error(request, "Поле 'УИК' является обязательным для создания избирателя.")
-                return
+        # Проверяем, что у агитатора есть УИК
+        if obj.agitator and not obj.agitator.assigned_uiks_as_agitator.exists():
+            from django.contrib import messages
+            messages.error(
+                request, 
+                f"❌ Ошибка: У агитатора '{obj.agitator.get_full_name()}' не назначен УИК. "
+                f"Сначала назначьте агитатора в УИК, а затем создавайте избирателей."
+            )
+            return
+        
+        # УИК автоматически заполняется из агитатора в методе save модели
         
         # Вызываем валидацию модели
         try:
@@ -1116,21 +1143,10 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         
         super().save_model(request, obj, form, change)
     
+
     def get_form(self, request, obj=None, **kwargs):
         """Получение формы с дополнительными настройками"""
         form = super().get_form(request, obj, **kwargs)
-        
-        # Добавляем JavaScript для автоматического заполнения УИК
-        if hasattr(form, 'Media'):
-            if not hasattr(form.Media, 'js'):
-                form.Media.js = []
-            form.Media.js.append('admin/js/voter_admin.js')
-        else:
-            class Media:
-                js = ['admin/js/voter_admin.js']
-            form.Media = Media()
-        
-        
         return form
     
     

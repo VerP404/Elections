@@ -426,7 +426,7 @@ def results_dashboard_callback(request, context):
         uik_plan_13_percent = round((item.get_effective_fact_13_sep() / item.plan_13_sep * 100), 1) if item.plan_13_sep > 0 else 0
         uik_plan_14_percent = round((item.get_effective_fact_14_sep() / item.plan_14_sep * 100), 1) if item.plan_14_sep > 0 else 0
         
-        # Информация о бригадире и агитаторах
+        # Информация о бригадире и агитаторах для tooltip
         if item.uik.brigadier:
             brigadier_phone = f" - {item.uik.brigadier.phone_number}" if item.uik.brigadier.phone_number else ""
             brigadier_info = f"{item.uik.brigadier.get_short_name()}{brigadier_phone}"
@@ -456,6 +456,7 @@ def results_dashboard_callback(request, context):
             'plan_14_percent': uik_plan_14_percent,
             'brigadier': brigadier_info,
             'agitators': agitators_text,
+            'agitators_list': agitators_info,  # Список для отдельного отображения
         })
     
     # Сортируем по номеру УИК
@@ -469,7 +470,7 @@ def results_dashboard_callback(request, context):
         'colors': ['#10b981', '#f59e0b']
     }
     
-    # 2. Голосование по всем группам (исключая 'other')
+    # 2. Голосование по всем группам (исключая 'other') + агитаторы
     workplace_groups = [choice[0] for choice in Workplace.GROUP_CHOICES if choice[0] != 'other']
     group_data = []
     group_voted_data = []
@@ -494,6 +495,25 @@ def results_dashboard_callback(request, context):
             voting_date__isnull=False
         ).count()
         group_voted_data.append(voted_in_group)
+    
+    # Добавляем отдельную группу для агитаторов
+    group_labels.append('Агитаторы')
+    
+    # Общее количество агитаторов
+    total_agitators = Voter.objects.filter(
+        uik__in=[item.uik for item in daily_data],
+        is_agitator=True
+    ).count()
+    group_data.append(total_agitators)
+    
+    # Проголосовавшие агитаторы
+    voted_agitators = Voter.objects.filter(
+        uik__in=[item.uik for item in daily_data],
+        is_agitator=True,
+        confirmed_by_brigadier=True,
+        voting_date__isnull=False
+    ).count()
+    group_voted_data.append(voted_agitators)
     
     workplace_groups_data = {
         'labels': group_labels,

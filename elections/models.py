@@ -256,7 +256,6 @@ class Workplace(models.Model):
         ('medicine', 'Медицина'),
         ('education', 'Образование'),
         ('social_protection', 'Соцзащита'),
-        ('agitators', 'Агитаторы'),
         ('other', 'Прочие'),
     ]
 
@@ -311,6 +310,10 @@ class Voter(models.Model):
         related_name='assigned_voters',
         limit_choices_to={'role': 'agitator', 'is_active_participant': True}
     )
+    
+    # Флаг агитатора
+    is_agitator = models.BooleanField('Агитатор', default=False,
+                                     help_text='Отметить, если избиратель является агитатором')
 
     # Планирование
     planned_date = models.DateField(
@@ -387,17 +390,26 @@ class Voter(models.Model):
         super().clean()
 
         # Проверяем обязательные поля
-        if not self.uik:
+        if not self.agitator:
             raise ValidationError({
-                'uik': 'Поле "УИК" является обязательным'
+                'agitator': 'Поле "Агитатор" является обязательным'
             })
 
         # Проверяем, что агитатор работает в этом УИК
-        if self.agitator and self.uik:
-            if not self.uik.agitators.filter(id=self.agitator.id).exists():
+        if self.agitator:
+            # Получаем УИК агитатора
+            agitator_uik = self.agitator.assigned_uiks_as_agitator.first()
+            
+            if not agitator_uik:
                 raise ValidationError({
-                    'agitator': f'Агитатор {self.agitator.get_full_name()} не работает в УИК {self.uik.number}'
+                    'agitator': f'У агитатора {self.agitator.get_full_name()} не назначен УИК'
                 })
+            
+            # Проверяем, что агитатор работает в указанном УИК
+            if self.uik and not self.uik.agitators.filter(id=self.agitator.id).exists():
+                # Если УИК не соответствует УИК агитатора, автоматически обновляем УИК
+                # Это происходит в методе save(), поэтому здесь просто предупреждаем
+                pass
 
         # Валидация дат - только 12, 13, 14 сентября 2025
         allowed_dates = [
@@ -429,8 +441,19 @@ class Voter(models.Model):
             })
 
     def save(self, *args, **kwargs):
-        """Переопределяем save для валидации"""
-        self.clean()
+        """Переопределяем save для валидации и автоматического заполнения УИК"""
+        # Автоматически заполняем/обновляем УИК из агитатора ПЕРЕД валидацией
+        if self.agitator:
+            # Получаем УИК агитатора через связь assigned_uiks_as_agitator
+            agitator_uik = self.agitator.assigned_uiks_as_agitator.first()
+            if agitator_uik:
+                # Обновляем УИК избирателя на УИК агитатора
+                self.uik = agitator_uik
+        
+        # Валидируем только если есть агитатор
+        if self.agitator:
+            self.clean()
+        
         super().save(*args, **kwargs)
 
 
@@ -735,7 +758,7 @@ class Analytics(models.Model):
 
 
 # Сигналы для автоматического обновления данных
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, m2m_changed
 from django.dispatch import receiver
 
 
@@ -760,3 +783,32 @@ def create_uik_analysis(sender, instance, created, **kwargs):
     if created:
         UIKAnalysis.objects.create(uik=instance)
         UIKResultsDaily.objects.create(uik=instance)
+
+
+@receiver(m2m_changed, sender=UIK.agitators.through)
+def update_voters_uik_on_agitator_change(sender, instance, action, pk_set, **kwargs):
+    """Обновляет УИК избирателей при изменении УИК агитатора"""
+    
+    # Срабатывает только при добавлении агитатора к УИК (не при удалении)
+    if action == 'post_add' and pk_set:
+        # instance - это UIK, pk_set - это ID агитаторов, которые были добавлены
+        for agitator_id in pk_set:
+            try:
+                agitator = User.objects.get(id=agitator_id, role='agitator')
+                new_uik = instance
+                
+                # Обновляем УИК всех избирателей этого агитатора
+                voters_to_update = Voter.objects.filter(agitator=agitator)
+                updated_count = 0
+                
+                for voter in voters_to_update:
+                    # Обновляем УИК избирателя на новый УИК агитатора
+                    voter.uik = new_uik
+                    voter.save()
+                    updated_count += 1
+                
+                if updated_count > 0:
+                    print(f"Обновлено {updated_count} избирателей агитатора {agitator.get_full_name()} на УИК {new_uik.number}")
+                    
+            except User.DoesNotExist:
+                continue
