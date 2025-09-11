@@ -197,6 +197,57 @@
       </table>
     </div>
   </div>
+
+<div style="text-align: center; padding: 10px; color: #64748b; font-size: 0.75rem;">
+    Автообновление каждые 30 сек
+</div>
+
+<script>
+// Сохранение позиции прокрутки
+function saveScrollPosition() {
+    const tableWrapper = document.querySelector('.table-wrapper');
+    if (tableWrapper) {
+        localStorage.setItem('tableScrollPosition', tableWrapper.scrollTop);
+    }
+}
+
+// Восстановление позиции прокрутки
+function restoreScrollPosition() {
+    const savedPosition = localStorage.getItem('tableScrollPosition');
+    if (savedPosition) {
+        const tableWrapper = document.querySelector('.table-wrapper');
+        if (tableWrapper) {
+            // Ждем полной загрузки таблицы
+            setTimeout(function() {
+                tableWrapper.scrollTop = parseInt(savedPosition);
+                localStorage.removeItem('tableScrollPosition');
+            }, 100);
+        }
+    }
+}
+
+// Сохраняем позицию при прокрутке таблицы
+document.addEventListener('DOMContentLoaded', function() {
+    const tableWrapper = document.querySelector('.table-wrapper');
+    if (tableWrapper) {
+        tableWrapper.addEventListener('scroll', saveScrollPosition);
+    }
+});
+
+// Восстанавливаем позицию после загрузки страницы
+document.addEventListener('DOMContentLoaded', restoreScrollPosition);
+
+// Дополнительная попытка восстановления после полной загрузки
+window.addEventListener('load', function() {
+    setTimeout(restoreScrollPosition, 200);
+});
+
+// Автообновление страницы каждые 30 секунд
+setTimeout(function() {
+    saveScrollPosition(); // Сохраняем позицию перед обновлением
+    window.location.reload();
+}, 30000);
+</script>
 {% endblock %}
 
 
