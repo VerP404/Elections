@@ -586,12 +586,21 @@ def results_by_brigadiers_dashboard_callback(request, context):
     from .models import User, UIK, Voter
     from django.db.models import Q, Count, Sum
     
-    # Получаем всех бригадиров (основных и дополнительных), у которых есть назначенные агитаторы
-    # Получаем всех бригадиров, у которых есть агитаторы (независимо от факта)
-    brigadiers_with_agitators = User.objects.filter(
+    # Получаем ВСЕХ бригадиров, которые работают в УИК (основных и дополнительных)
+    # Основные бригадиры
+    main_brigadiers = User.objects.filter(
         role='brigadier',
-        assigned_agitators__isnull=False
-    ).distinct().prefetch_related('assigned_agitators')
+        assigned_uik_as_brigadier__isnull=False  # У которых есть УИК как основной бригадир
+    ).distinct()
+    
+    # Дополнительные бригадиры
+    additional_brigadiers = User.objects.filter(
+        role='brigadier',
+        additional_uiks__isnull=False  # Которые назначены как дополнительные
+    ).distinct()
+    
+    # Объединяем всех бригадиров
+    all_brigadiers = (main_brigadiers | additional_brigadiers).distinct().prefetch_related('assigned_agitators', 'assigned_uik_as_brigadier', 'additional_uiks')
     
     rows = []
     total_plan = 0
@@ -603,7 +612,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
     total_plan_14_sep = 0
     total_14_sep = 0
     
-    for brigadier in brigadiers_with_agitators:
+    for brigadier in all_brigadiers:
         brigadier_total_plan = 0
         brigadier_total_fact = 0
         brigadier_plan_12_sep = 0
