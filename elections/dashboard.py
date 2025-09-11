@@ -586,7 +586,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
     from .models import User, UIK, Voter
     from django.db.models import Q, Count, Sum
     
-    # Получаем всех бригадиров, у которых есть назначенные агитаторы
+    # Получаем всех бригадиров (основных и дополнительных), у которых есть назначенные агитаторы
     brigadiers_with_agitators = User.objects.filter(
         role='brigadier',
         assigned_agitators__isnull=False
@@ -612,7 +612,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
         brigadier_plan_14_sep = 0
         brigadier_14_sep = 0
         
-        # Получаем УИК, где работает этот бригадир
+        # Получаем УИК, где работает этот бригадир (как основной или как дополнительный)
         uiks = UIK.objects.filter(
             Q(brigadier=brigadier) | Q(additional_brigadiers=brigadier)
         ).distinct().prefetch_related('agitators')
@@ -626,6 +626,10 @@ def results_by_brigadiers_dashboard_callback(request, context):
             uik_13_sep = 0
             uik_plan_14_sep = 0
             uik_14_sep = 0
+            
+            # Определяем роль бригадира в этом УИК
+            is_main_brigadier = uik.brigadier == brigadier
+            role_suffix = " (основной)" if is_main_brigadier else " (дополнительный)"
             
             # Планы для УИК (берем из UIKResultsDaily если есть)
             try:
@@ -679,7 +683,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
                 
                 rows.append({
                     'row_type': 'agitator',
-                    'brigadier': brigadier.get_short_name(),
+                    'brigadier': brigadier.get_short_name() + role_suffix,
                     'uik_number': uik.number,
                     'agitator_name': agitator.get_short_name(),
                     'fact_total': fact_total,
@@ -709,7 +713,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
                 
                 rows.append({
                     'row_type': 'uik_total',
-                    'brigadier': brigadier.get_short_name(),
+                    'brigadier': brigadier.get_short_name() + role_suffix,
                     'uik_number': uik.number,
                     'agitator_name': f'Итого по УИК {uik.number}',
                     'fact_total': uik_total_fact,
