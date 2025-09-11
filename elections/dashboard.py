@@ -630,9 +630,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
             uik_plan_14_sep = 0
             uik_14_sep = 0
             
-            # Определяем роль бригадира в этом УИК
-            is_main_brigadier = uik.brigadier == brigadier
-            role_suffix = " (основной)" if is_main_brigadier else " (дополнительный)"
+            # Не нужно указывать роль - все бригадиры равны
             
             # Планы для УИК считаем из базы избирателей (все избиратели этого УИК)
             uik_plan_12_sep = Voter.objects.filter(
