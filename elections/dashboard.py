@@ -181,8 +181,7 @@ def analysis_dashboard_callback(request, context):
 def results_table_dashboard_callback(request, context):
     """Callback: табличный дашборд с расчетом фактов по реальным данным (Voter).
 
-    Требование: на каждый УИК три строки — по двум агитаторам и строка "Итого по УИК".
-    Планы показываются только в строке итога УИК. Факты считаются по подтвержденным голосованиям.
+    Новая структура: УИК -> Основной бригадир -> Дополнительные бригадиры -> Агитаторы с указанием руководителя
     """
     # Даты голосования (фиксированные требования домена)
     allowed_dates = [
@@ -195,7 +194,7 @@ def results_table_dashboard_callback(request, context):
     uiks = (
         UIK.objects
         .select_related('brigadier')
-        .prefetch_related('agitators')
+        .prefetch_related('agitators', 'additional_brigadiers')
         .all()
         .order_by('number')
     )
@@ -230,11 +229,17 @@ def results_table_dashboard_callback(request, context):
         p13 = round((fact_13 / plan_13 * 100), 1) if plan_13 > 0 else 0
         p14 = round((fact_14 / plan_14 * 100), 1) if plan_14 > 0 else 0
 
-        # Бригадир и агитаторы
-        brigadier_name = uik.brigadier.get_short_name() if uik.brigadier else '-'
-        agitators_qs = list(uik.agitators.all()[:2])  # берем первых двух по условию
+        # Бригадиры
+        main_brigadier_name = uik.brigadier.get_short_name() if uik.brigadier else '-'
+        additional_brigadiers = list(uik.additional_brigadiers.all())
+        
+        # Собираем всех бригадиров (основной + дополнительные)
+        all_brigadiers = []
+        if uik.brigadier:
+            all_brigadiers.append(uik.brigadier)
+        all_brigadiers.extend(additional_brigadiers)
 
-        # Логика раскрашивания из results_dashboard.html
+        # Логика раскрашивания
         if plan_total == 0:
             row_color = 'yellow'  # Желтая строка если план = 0
         elif total_percent >= 100:
@@ -248,8 +253,9 @@ def results_table_dashboard_callback(request, context):
         rows.append({
             'row_type': 'total',
             'uik_number': uik.number,
-            'brigadier': brigadier_name,
+            'brigadier': main_brigadier_name,
             'agitators': 'Итого по УИК',
+            'managing_brigadier': '',
             'plan_total': plan_total,
             'fact_total': fact_total,
             'plan_execution_percent': total_percent,
@@ -265,8 +271,18 @@ def results_table_dashboard_callback(request, context):
             'row_color': row_color,
         })
 
-        # Строки по каждому агитатору (под итогом УИК)
-        for ag in agitators_qs:
+        # Строки по каждому агитатору с указанием руководителя
+        for ag in uik.agitators.all():
+            # Ищем, кто управляет этим агитатором
+            managing_brigadier = None
+            for brigadier in all_brigadiers:
+                if brigadier.assigned_agitators.filter(id=ag.id).exists():
+                    managing_brigadier = brigadier
+                    break
+            
+            managing_brigadier_name = managing_brigadier.get_short_name() if managing_brigadier else '-'
+            
+            # Считаем факты по агитатору
             a_fact_12 = Voter.objects.filter(uik=uik, agitator=ag, confirmed_by_brigadier=True, voting_date=allowed_dates[0]).count()
             a_fact_13 = Voter.objects.filter(uik=uik, agitator=ag, confirmed_by_brigadier=True, voting_date=allowed_dates[1]).count()
             a_fact_14 = Voter.objects.filter(uik=uik, agitator=ag, confirmed_by_brigadier=True, voting_date=allowed_dates[2]).count()
@@ -275,8 +291,9 @@ def results_table_dashboard_callback(request, context):
             rows.append({
                 'row_type': 'agitator',
                 'uik_number': uik.number,
-                'brigadier': brigadier_name,
+                'brigadier': main_brigadier_name,
                 'agitators': ag.get_short_name(),
+                'managing_brigadier': managing_brigadier_name,
                 'plan_total': '',
                 'fact_total': a_fact_total,
                 'plan_execution_percent': '',
@@ -299,6 +316,7 @@ def results_table_dashboard_callback(request, context):
                 'uik_number': '',
                 'brigadier': '',
                 'agitators': '',
+                'managing_brigadier': '',
                 'plan_total': '',
                 'fact_total': '',
                 'plan_execution_percent': '',

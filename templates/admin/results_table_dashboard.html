@@ -82,6 +82,7 @@
           <th>УИК</th>
           <th>Бригадир</th>
           <th>Агитатор(ы)</th>
+          <th>Руководитель</th>
           <th>Общий план</th>
           <th>Общий факт</th>
           <th>Общий %</th>
@@ -100,7 +101,7 @@
         {% for r in uik_table_rows %}
         {% if r.row_type == 'separator' %}
         <tr class="uik-separator">
-          <td colspan="15"></td>
+          <td colspan="16"></td>
         </tr>
         {% else %}
         <tr class="{% if r.row_type == 'total' %}row-{{ r.row_color }}{% else %}row-agitator{% endif %}">
@@ -119,6 +120,13 @@
               <span style="color: #2563eb; font-weight: 500;">{{ r.agitators }}</span>
             {% else %}
               <strong>{{ r.agitators }}</strong>
+            {% endif %}
+          </td>
+          <td>
+            {% if r.row_type == 'agitator' %}
+              <span style="color: #059669; font-size: 0.85rem;">{{ r.managing_brigadier|default:"-" }}</span>
+            {% else %}
+              -
             {% endif %}
           </td>
           <td>
@@ -171,7 +179,7 @@
       </tbody>
       <tfoot>
         <tr>
-          <td colspan="3" style="text-align:right;">Итого:</td>
+          <td colspan="4" style="text-align:right;">Итого:</td>
           <td>{{ total_plan }}</td>
           <td>{{ total_fact }}</td>
           <td>

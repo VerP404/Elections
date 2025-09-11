@@ -114,13 +114,13 @@ class UserResource(resources.ModelResource):
         fields = (
             'id', 'username', 'last_name', 'first_name', 'middle_name', 
             'phone_number', 'email', 'role', 'workplace', 
-            'is_active_participant', 'is_active', 'is_staff', 'is_superuser',
+            'is_active_participant', 'can_be_additional', 'is_active', 'is_staff', 'is_superuser',
             'date_joined', 'last_login'
         )
         export_order = (
             'id', 'username', 'last_name', 'first_name', 'middle_name', 
             'phone_number', 'email', 'role', 'workplace', 
-            'is_active_participant', 'is_active', 'is_staff', 'is_superuser',
+            'is_active_participant', 'can_be_additional', 'is_active', 'is_staff', 'is_superuser',
             'date_joined', 'last_login'
         )
         import_id_fields = ('id',)  # Уникальное поле для импорта
@@ -148,10 +148,7 @@ class UserResource(resources.ModelResource):
         if role and role not in valid_roles:
             raise ValidationError(f"Роль должна быть одной из: {', '.join(valid_roles)}")
         
-        # Валидация телефона
-        phone = row.get('phone_number', '')
-        if phone and (not str(phone).startswith('8') or len(str(phone)) != 11):
-            raise ValidationError("Телефон должен быть в формате 8XXXXXXXXXX")
+        # Валидация телефона - убрана, поле может содержать любой текст до 50 символов
         
         # Валидация email
         email = row.get('email', '')
@@ -249,8 +246,8 @@ class UIKResource(resources.ModelResource):
     
     class Meta:
         model = UIK
-        fields = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators', 'created_at', 'updated_at', 'created_by', 'updated_by')
-        export_order = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators', 'created_at', 'updated_at', 'created_by', 'updated_by')
+        fields = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators', 'additional_brigadiers', 'created_at', 'updated_at', 'created_by', 'updated_by')
+        export_order = ('id', 'number', 'address', 'planned_voters_count', 'brigadier', 'agitators', 'additional_brigadiers', 'created_at', 'updated_at', 'created_by', 'updated_by')
         import_id_fields = ('number',)  # Уникальное поле для импорта
         skip_unchanged = True
         report_skipped = True
@@ -306,6 +303,31 @@ class UIKResource(resources.ModelResource):
                         raise ValidationError(f"Агитатор с логином '{identifier}' не найден или не является агитатором")
             
             row['agitators'] = ','.join(map(str, agitator_ids))
+        
+        # Обработка дополнительных бригадиров (через запятую)
+        additional_brigadiers_value = row.get('additional_brigadiers', '')
+        if additional_brigadiers_value:
+            brigadier_ids = []
+            # Разделяем по запятой
+            brigadier_identifiers = [x.strip() for x in str(additional_brigadiers_value).split(',') if x.strip()]
+            
+            for identifier in brigadier_identifiers:
+                # Если это число (ID), ищем по ID
+                if str(identifier).isdigit():
+                    try:
+                        brigadier = User.objects.get(id=int(identifier), role='brigadier', can_be_additional=True)
+                        brigadier_ids.append(brigadier.id)
+                    except User.DoesNotExist:
+                        raise ValidationError(f"Дополнительный бригадир с ID '{identifier}' не найден или не может быть дополнительным")
+                else:
+                    # Если это строка (логин), ищем по логину
+                    try:
+                        brigadier = User.objects.get(username=identifier, role='brigadier', can_be_additional=True)
+                        brigadier_ids.append(brigadier.id)
+                    except User.DoesNotExist:
+                        raise ValidationError(f"Дополнительный бригадир с логином '{identifier}' не найден или не может быть дополнительным")
+            
+            row['additional_brigadiers'] = ','.join(map(str, brigadier_ids))
     
     def before_save_instance(self, instance, row, **kwargs):
         """Обработка перед сохранением"""
@@ -314,6 +336,12 @@ class UIKResource(resources.ModelResource):
         if agitators_value:
             agitator_ids = [int(x) for x in str(agitators_value).split(',') if x.strip()]
             instance.agitators.set(agitator_ids)
+        
+        # Обрабатываем дополнительных бригадиров после создания/обновления УИК
+        additional_brigadiers_value = row.get('additional_brigadiers', '')
+        if additional_brigadiers_value:
+            brigadier_ids = [int(x) for x in str(additional_brigadiers_value).split(',') if x.strip()]
+            instance.additional_brigadiers.set(brigadier_ids)
         
         # Обрабатываем created_by и updated_by
         created_by_value = row.get('created_by', '')
@@ -533,6 +561,7 @@ class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
     list_filter = ['role', 'is_active_participant', 'is_active', 'workplace']
     search_fields = ['username', 'first_name', 'last_name', 'phone_number', 'email', 'assigned_uiks_as_agitator__number', 'assigned_uik_as_brigadier__number']
     ordering = ['id']
+    filter_horizontal = ['assigned_agitators']
     
     fieldsets = (
         ('Основная информация', {
@@ -543,8 +572,13 @@ class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
         }),
 
         ('Роль участника', {
-            'fields': ('role', 'workplace', 'is_active_participant'),
+            'fields': ('role', 'workplace', 'is_active_participant', 'can_be_additional'),
             'description': 'Выберите роль и место работы пользователя.'
+        }),
+        ('Связи с агитаторами', {
+            'fields': ('assigned_agitators',),
+            'description': 'Назначьте агитаторов для этого бригадира (только для роли "бригадир")',
+            'classes': ('collapse',)
         }),
         ('Статус', {
             'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')
@@ -564,7 +598,7 @@ class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
             )
         }),
         ('Роль участника', {
-            'fields': ('role', 'workplace'),
+            'fields': ('role', 'workplace', 'can_be_additional'),
             'description': 'Выберите роль и место работы пользователя.'
         }),
         ('Статус', {
@@ -645,12 +679,12 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
     resource_class = UIKResource
     import_form_class = ImportForm
     export_form_class = ExportForm
-    list_display = ['number', 'address_short', 'brigadier_display', 'agitators_display', 'planned_voters_count', 'actual_voters_count', 'voters_difference', 'has_results']
+    list_display = ['number', 'address_short', 'brigadier_display', 'agitators_display', 'additional_brigadiers_display', 'planned_voters_count', 'actual_voters_count', 'voters_difference', 'has_results']
     list_filter = ['brigadier', 'created_at']
     search_fields = ['number', 'address']
     ordering = ['number']
     readonly_fields = ['created_by', 'updated_by', 'created_at', 'updated_at']
-    filter_horizontal = ['agitators']
+    filter_horizontal = ['agitators', 'additional_brigadiers']
     autocomplete_fields = ['brigadier']
     
     # Поля для редактирования
@@ -659,8 +693,8 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
             'fields': ('number', 'address', 'planned_voters_count')
         }),
         ('Персонал', {
-            'fields': ('brigadier', 'agitators'),
-            'description': 'Назначьте бригадира и агитаторов для УИК'
+            'fields': ('brigadier', 'agitators', 'additional_brigadiers'),
+            'description': 'Назначьте бригадира, агитаторов и дополнительных бригадиров для УИК'
         }),
         ('Системная информация', {
             'fields': ('created_by', 'updated_by', 'created_at', 'updated_at'),
@@ -773,6 +807,16 @@ class UIKAdmin(ImportExportModelAdmin, ModelAdmin):
             for agitator in obj.agitators.all():
                 agitators_list.append(agitator.get_short_name())
             return format_html('<br>'.join(agitators_list))
+        return '-'
+    
+    @display(description='Доп. бригадиры')
+    def additional_brigadiers_display(self, obj):
+        """Отображение дополнительных бригадиров в формате Фамилия И.О. с переносами строк"""
+        if obj.additional_brigadiers.exists():
+            brigadiers_list = []
+            for brigadier in obj.additional_brigadiers.all():
+                brigadiers_list.append(brigadier.get_short_name())
+            return format_html('<br>'.join(brigadiers_list))
         return '-'
     
     def changelist_view(self, request, extra_context=None):

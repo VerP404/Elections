@@ -55,6 +55,21 @@ class User(AbstractUser):
         verbose_name='Место работы'
     )
     is_active_participant = models.BooleanField('Активный участник', default=True)
+    
+    # Новые поля для расширенной функциональности
+    can_be_additional = models.BooleanField(
+        'Может быть дополнительным бригадиром',
+        default=False,
+        help_text='Отметьте, если этот бригадир может быть назначен дополнительным в другие УИК'
+    )
+    assigned_agitators = models.ManyToManyField(
+        'self',
+        related_name='assigned_brigadiers',
+        limit_choices_to={'role': 'agitator'},
+        symmetrical=False,
+        blank=True,
+        verbose_name='Назначенные агитаторы'
+    )
 
     class Meta:
         verbose_name = 'Пользователь'
@@ -156,6 +171,13 @@ class UIK(models.Model):
         verbose_name='Агитаторы',
         limit_choices_to={'role': 'agitator', 'is_active_participant': True},
         related_name='assigned_uiks_as_agitator',
+        blank=True
+    )
+    additional_brigadiers = models.ManyToManyField(
+        User,
+        verbose_name='Дополнительные бригадиры',
+        limit_choices_to={'role': 'brigadier', 'can_be_additional': True, 'is_active_participant': True},
+        related_name='additional_uiks',
         blank=True
     )
 
@@ -291,11 +313,7 @@ class Voter(models.Model):
     birth_date = models.DateField('Дата рождения')
     registration_address = models.TextField('Адрес регистрации')
 
-    phone_regex = RegexValidator(
-        regex=r'^8\d{10}$',
-        message="Номер телефона должен быть в формате: '8XXXXXXXXXX'"
-    )
-    phone_number = models.CharField('Телефон', validators=[phone_regex], max_length=11, blank=True)
+    phone_number = models.CharField('Телефон', max_length=50, blank=True)
 
     # Связи с другими моделями
     workplace = models.ForeignKey(Workplace, on_delete=models.SET_NULL, null=True, blank=True,
