@@ -597,7 +597,7 @@
             <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
                 <span>Детализация результатов по УИК</span>
                 <div class="last-update">
-                    Обновлено: {% now "d.m.Y H:i:s" %}
+                    Обновлено: {{ last_update_time|date:"d.m.Y H:i:s" }}
                 </div>
             </div>
             {% if uik_table_data %}

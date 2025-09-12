@@ -382,6 +382,7 @@ def results_dashboard_callback(request, context):
             'total_14_sep': 0,
             'plan_14_percent': 0,
             'uik_table_data': [],
+            'last_update_time': None,
         })
         return context
     
@@ -475,6 +476,9 @@ def results_dashboard_callback(request, context):
     
     # Сортируем по номеру УИК
     uik_table_data.sort(key=lambda x: x['uik_number'])
+    
+    # Получаем время последнего обновления данных
+    last_update_time = daily_data.order_by('-updated_at').first().updated_at if daily_data.exists() else None
     
     # Данные для диаграмм
     # 1. Статус голосования (на основе UIKResultsDaily: Общий план и Общий факт)
@@ -572,6 +576,7 @@ def results_dashboard_callback(request, context):
         'total_14_sep': total_14_sep,
         'plan_14_percent': plan_14_percent,
         'uik_table_data': uik_table_data,
+        'last_update_time': last_update_time,
         # Данные для диаграмм
         'voting_status_data': voting_status_data,
         'workplace_groups_data': workplace_groups_data,
