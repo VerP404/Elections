@@ -939,7 +939,7 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     # export_form_class = SelectableFieldsExportForm  # Альтернативный вариант с выбором полей
     
     list_display = ['id', 'full_name', 'birth_date_display', 'uik', 'brigadier_display', 'agitator', 'is_agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
-    list_filter = ['voting_method', 'confirmed_by_brigadier', 'is_agitator', 'uik', 'uik__brigadier', 'agitator', 'planned_date', 'voting_date', 'created_at']
+    list_filter = ['voting_method', 'confirmed_by_brigadier', 'is_agitator', 'uik', 'uik__brigadier', 'agitator', 'workplace', 'planned_date', 'voting_date', 'created_at']
     search_fields = ['id', 'last_name', 'first_name', 'middle_name']
     list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'is_agitator']
     list_per_page = 50
