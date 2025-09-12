@@ -691,20 +691,32 @@ class UIKResultsDaily(models.Model):
         """Обновить эффективные значения фактов на основе логики переключения"""
         # Обновляем источник для каждого дня
         if not self.fact_12_sep_locked:
-            if self.fact_12_sep_calculated >= self.fact_12_sep:
+            # Новая логика: если источник был 'calculated' или значения были равны, обновляем на расчетное
+            if (self.fact_12_sep_source == 'calculated' or 
+                self.fact_12_sep == self.fact_12_sep_calculated or 
+                self.fact_12_sep_calculated >= self.fact_12_sep):
                 self.fact_12_sep_source = 'calculated'
+                self.fact_12_sep = self.fact_12_sep_calculated
             else:
                 self.fact_12_sep_source = 'manual'
 
         if not self.fact_13_sep_locked:
-            if self.fact_13_sep_calculated >= self.fact_13_sep:
+            # Новая логика: если источник был 'calculated' или значения были равны, обновляем на расчетное
+            if (self.fact_13_sep_source == 'calculated' or 
+                self.fact_13_sep == self.fact_13_sep_calculated or 
+                self.fact_13_sep_calculated >= self.fact_13_sep):
                 self.fact_13_sep_source = 'calculated'
+                self.fact_13_sep = self.fact_13_sep_calculated
             else:
                 self.fact_13_sep_source = 'manual'
 
         if not self.fact_14_sep_locked:
-            if self.fact_14_sep_calculated >= self.fact_14_sep:
+            # Новая логика: если источник был 'calculated' или значения были равны, обновляем на расчетное
+            if (self.fact_14_sep_source == 'calculated' or 
+                self.fact_14_sep == self.fact_14_sep_calculated or 
+                self.fact_14_sep_calculated >= self.fact_14_sep):
                 self.fact_14_sep_source = 'calculated'
+                self.fact_14_sep = self.fact_14_sep_calculated
             else:
                 self.fact_14_sep_source = 'manual'
 
@@ -733,14 +745,6 @@ class UIKResultsDaily(models.Model):
         """Пересчитать все расчетные значения и обновить эффективные факты"""
         self.calculate_daily_facts()
         self.update_effective_facts()
-
-        # Перезаписываем fact_XX_sep на эффективные значения если не заблокировано
-        if not self.fact_12_sep_locked:
-            self.fact_12_sep = max(self.fact_12_sep, self.fact_12_sep_calculated)
-        if not self.fact_13_sep_locked:
-            self.fact_13_sep = max(self.fact_13_sep, self.fact_13_sep_calculated)
-        if not self.fact_14_sep_locked:
-            self.fact_14_sep = max(self.fact_14_sep, self.fact_14_sep_calculated)
 
         self.save(update_fields=[
             'fact_12_sep_calculated', 'fact_13_sep_calculated', 'fact_14_sep_calculated',
@@ -784,15 +788,15 @@ from django.dispatch import receiver
 def update_uik_results_daily(sender, instance, created, **kwargs):
     """Автоматически пересчитываем UIKResultsDaily при изменении избирателя"""
     # Пересчитываем UIKResultsDaily при любом изменении подтверждения или даты голосования
-    if instance.voting_date and instance.confirmed_by_brigadier:
-        try:
-            uik_results_daily = UIKResultsDaily.objects.get(uik=instance.uik)
-            uik_results_daily.recalculate_all()
-        except UIKResultsDaily.DoesNotExist:
-            # Создаем запись если её нет
-            UIKResultsDaily.objects.create(uik=instance.uik)
-            uik_results_daily = UIKResultsDaily.objects.get(uik=instance.uik)
-            uik_results_daily.recalculate_all()
+    # Это включает как подтверждение, так и снятие подтверждения
+    try:
+        uik_results_daily = UIKResultsDaily.objects.get(uik=instance.uik)
+        uik_results_daily.recalculate_all()
+    except UIKResultsDaily.DoesNotExist:
+        # Создаем запись если её нет
+        UIKResultsDaily.objects.create(uik=instance.uik)
+        uik_results_daily = UIKResultsDaily.objects.get(uik=instance.uik)
+        uik_results_daily.recalculate_all()
 
 
 @receiver(post_save, sender=UIK)

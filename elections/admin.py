@@ -2196,52 +2196,20 @@ class UIKResultsDailyAdmin(ImportExportModelAdmin, ModelAdmin):
         return request.user.is_superuser or request.user.role == 'admin'
     
     def save_model(self, request, obj, form, change):
-        """Автоматически заполняем поля created_by и updated_by и перезаписываем факты"""
+        """Автоматически заполняем поля created_by и updated_by"""
         if not change:  # Создание новой записи
             obj.created_by = request.user
         obj.updated_by = request.user
         
         # Сохраняем объект
         super().save_model(request, obj, form, change)
-        
-        # Перезаписываем fact_XX_sep на эффективные значения если не заблокировано
-        if not obj.fact_12_sep_locked:
-            obj.fact_12_sep = max(obj.fact_12_sep, obj.fact_12_sep_calculated)
-        if not obj.fact_13_sep_locked:
-            obj.fact_13_sep = max(obj.fact_13_sep, obj.fact_13_sep_calculated)
-        if not obj.fact_14_sep_locked:
-            obj.fact_14_sep = max(obj.fact_14_sep, obj.fact_14_sep_calculated)
-        
-        # Сохраняем обновленные значения
-        obj.save(update_fields=['fact_12_sep', 'fact_13_sep', 'fact_14_sep'])
     
     # Действия для массовых операций
-    actions = ['recalculate_daily_facts', 'recalculate_all_daily_facts']
+    actions = ['recalculate_daily_facts', 'recalculate_all_daily_facts', 'sync_manual_with_calculated']
     
     def get_changelist_form(self, request, **kwargs):
-        """Кастомная форма для changelist с перезаписью fact_XX_sep на эффективные значения"""
+        """Кастомная форма для changelist"""
         form = super().get_changelist_form(request, **kwargs)
-        
-        # Переопределяем метод save для формы
-        original_save = form.save
-        
-        def custom_save(*args, **kwargs):
-            commit = kwargs.get('commit', True)
-            instance = original_save(*args, **kwargs)
-            if commit and instance:
-                # Перезаписываем fact_XX_sep на эффективные значения если не заблокировано
-                if not instance.fact_12_sep_locked:
-                    instance.fact_12_sep = max(instance.fact_12_sep, instance.fact_12_sep_calculated)
-                if not instance.fact_13_sep_locked:
-                    instance.fact_13_sep = max(instance.fact_13_sep, instance.fact_13_sep_calculated)
-                if not instance.fact_14_sep_locked:
-                    instance.fact_14_sep = max(instance.fact_14_sep, instance.fact_14_sep_calculated)
-                
-                # Сохраняем обновленные значения
-                instance.save(update_fields=['fact_12_sep', 'fact_13_sep', 'fact_14_sep'])
-            return instance
-        
-        form.save = custom_save
         return form
     
     @admin.action(description='Пересчитать факты для выбранных УИК')
@@ -2277,4 +2245,33 @@ class UIKResultsDailyAdmin(ImportExportModelAdmin, ModelAdmin):
         self.message_user(
             request, 
             f'Выполнен пересчет всех фактов: {output}'
+        )
+    
+    @admin.action(description='Синхронизировать вписанные значения с расчетными')
+    def sync_manual_with_calculated(self, request, queryset):
+        """Синхронизировать вписанные значения с расчетными для выбранных УИК"""
+        updated = 0
+        for instance in queryset:
+            # Принудительно обновляем вписанные значения на расчетные для незаблокированных дней
+            if not instance.fact_12_sep_locked:
+                instance.fact_12_sep = instance.fact_12_sep_calculated
+                instance.fact_12_sep_source = 'calculated'
+            
+            if not instance.fact_13_sep_locked:
+                instance.fact_13_sep = instance.fact_13_sep_calculated
+                instance.fact_13_sep_source = 'calculated'
+            
+            if not instance.fact_14_sep_locked:
+                instance.fact_14_sep = instance.fact_14_sep_calculated
+                instance.fact_14_sep_source = 'calculated'
+            
+            instance.save(update_fields=[
+                'fact_12_sep', 'fact_13_sep', 'fact_14_sep',
+                'fact_12_sep_source', 'fact_13_sep_source', 'fact_14_sep_source'
+            ])
+            updated += 1
+        
+        self.message_user(
+            request, 
+            f'Синхронизировано {updated} записей UIKResultsDaily. Вписанные значения обновлены на расчетные для незаблокированных дней.'
         )
