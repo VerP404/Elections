@@ -749,7 +749,8 @@ class UIKResultsDaily(models.Model):
         self.save(update_fields=[
             'fact_12_sep_calculated', 'fact_13_sep_calculated', 'fact_14_sep_calculated',
             'fact_12_sep', 'fact_13_sep', 'fact_14_sep',
-            'fact_12_sep_source', 'fact_13_sep_source', 'fact_14_sep_source'
+            'fact_12_sep_source', 'fact_13_sep_source', 'fact_14_sep_source',
+            'updated_at'
         ])
 
     def save(self, *args, **kwargs):
