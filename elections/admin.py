@@ -540,6 +540,105 @@ class VoterResource(resources.ModelResource):
         return instance
 
 
+class VoterExcelExportResource(resources.ModelResource):
+    """Отдельный ресурс ТОЛЬКО для выгрузки в Excel с русскими названиями"""
+    
+    # Переопределяем поля с русскими названиями
+    id = resources.Field(attribute='id', column_name='ID')
+    last_name = resources.Field(attribute='last_name', column_name='Фамилия')
+    first_name = resources.Field(attribute='first_name', column_name='Имя')
+    middle_name = resources.Field(attribute='middle_name', column_name='Отчество')
+    birth_date = resources.Field(attribute='birth_date', column_name='Дата рождения')
+    registration_address = resources.Field(attribute='registration_address', column_name='Адрес регистрации')
+    phone_number = resources.Field(attribute='phone_number', column_name='Телефон')
+    workplace_name = resources.Field(attribute='workplace__name', column_name='Место работы')
+    uik_number = resources.Field(attribute='uik__number', column_name='Номер УИК')
+    uik_address = resources.Field(attribute='uik__address', column_name='Адрес УИК')
+    brigadier_name = resources.Field(attribute='uik__brigadier__get_short_name', column_name='Бригадир')
+    agitator_name = resources.Field(attribute='agitator__get_short_name', column_name='Агитатор')
+    planned_date = resources.Field(attribute='planned_date', column_name='Планируемая дата голосования')
+    voting_date = resources.Field(attribute='voting_date', column_name='Дата голосования')
+    voting_method_display = resources.Field(attribute='get_voting_method_display', column_name='Способ голосования')
+    confirmed_by_brigadier = resources.Field(attribute='confirmed_by_brigadier', column_name='Подтверждено бригадиром')
+    is_agitator = resources.Field(attribute='is_agitator', column_name='Является агитатором')
+    created_at = resources.Field(attribute='created_at', column_name='Дата создания')
+    updated_at = resources.Field(attribute='updated_at', column_name='Дата обновления')
+    
+    class Meta:
+        model = Voter
+        fields = (
+            'id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 
+            'phone_number', 'workplace_name', 'uik_number', 'uik_address', 'brigadier_name', 
+            'agitator_name', 'planned_date', 'voting_date', 'voting_method_display', 
+            'confirmed_by_brigadier', 'is_agitator', 'created_at', 'updated_at'
+        )
+        export_order = (
+            'id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 
+            'phone_number', 'workplace_name', 'uik_number', 'uik_address', 'brigadier_name', 
+            'agitator_name', 'planned_date', 'voting_date', 'voting_method_display', 
+            'confirmed_by_brigadier', 'is_agitator', 'created_at', 'updated_at'
+        )
+        skip_unchanged = True
+        report_skipped = True
+        # ВАЖНО: НЕ указываем import_id_fields - это ресурс только для экспорта!
+    
+    def dehydrate_brigadier_name(self, voter):
+        """Получаем ФИО бригадира"""
+        if voter.uik and voter.uik.brigadier:
+            return voter.uik.brigadier.get_short_name()
+        return '-'
+    
+    def dehydrate_agitator_name(self, voter):
+        """Получаем ФИО агитатора"""
+        if voter.agitator:
+            return voter.agitator.get_short_name()
+        return '-'
+    
+    def dehydrate_voting_method_display(self, voter):
+        """Получаем человекочитаемое название способа голосования"""
+        if voter.voting_method:
+            return dict(voter._meta.get_field('voting_method').choices).get(voter.voting_method, voter.voting_method)
+        return '-'
+    
+    def dehydrate_confirmed_by_brigadier(self, voter):
+        """Преобразуем булево значение в текст"""
+        return 'Да' if voter.confirmed_by_brigadier else 'Нет'
+    
+    def dehydrate_is_agitator(self, voter):
+        """Преобразуем булево значение в текст"""
+        return 'Да' if voter.is_agitator else 'Нет'
+    
+    def dehydrate_birth_date(self, voter):
+        """Форматируем дату рождения"""
+        if voter.birth_date:
+            return voter.birth_date.strftime('%d.%m.%Y')
+        return '-'
+    
+    def dehydrate_planned_date(self, voter):
+        """Форматируем планируемую дату"""
+        if voter.planned_date:
+            return voter.planned_date.strftime('%d.%m.%Y')
+        return '-'
+    
+    def dehydrate_voting_date(self, voter):
+        """Форматируем дату голосования"""
+        if voter.voting_date:
+            return voter.voting_date.strftime('%d.%m.%Y')
+        return '-'
+    
+    def dehydrate_created_at(self, voter):
+        """Форматируем дату создания"""
+        if voter.created_at:
+            return voter.created_at.strftime('%d.%m.%Y %H:%M')
+        return '-'
+    
+    def dehydrate_updated_at(self, voter):
+        """Форматируем дату обновления"""
+        if voter.updated_at:
+            return voter.updated_at.strftime('%d.%m.%Y %H:%M')
+        return '-'
+
+
 @admin.register(User)
 class UserAdmin(ImportExportModelAdmin, BaseUserAdmin, ModelAdmin):
     """Админка для пользователей с ролями и импортом/экспортом"""
@@ -949,7 +1048,7 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     formats = [XLSX, CSV]
     
     # Changelist actions (кнопки в верхней части списка)
-    actions_list = ['bulk_confirm_voters']
+    actions_list = ['bulk_confirm_voters', 'export_to_excel']
     
     
     @admin.display(description='Дата рождения', ordering='birth_date')
@@ -1100,7 +1199,7 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         """Динамические поля в зависимости от роли"""
         base_fields = (
             ('last_name', 'first_name', 'middle_name', 'birth_date'),
-            ('phone_number', 'workplace')
+            ('phone_number', 'workplace', 'registration_address')
         )
         
         if request.user.role == 'agitator':
@@ -1632,6 +1731,50 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         # Только админы, операторы и бригадиры могут подтверждать
         return (request.user.is_superuser or 
                 request.user.role in ['admin', 'operator', 'brigadier'])
+    
+    @action(description="Выгрузка в Excel", url_path="export-to-excel", permissions=["export_to_excel"])
+    def export_to_excel(self, request):
+        """Выгрузка избирателей в Excel с русскими названиями и человекочитаемыми данными"""
+        from django.http import HttpResponse
+        from import_export.formats.base_formats import XLSX
+        from datetime import datetime
+        
+        # Получаем queryset с учетом фильтров
+        queryset = self.get_queryset(request)
+        
+        # Применяем фильтры из request
+        if hasattr(request, 'GET') and request.GET:
+            # Применяем фильтры из URL параметров
+            for key, value in request.GET.items():
+                if key.startswith('uik__') or key.startswith('agitator__') or key.startswith('workplace__'):
+                    if value:
+                        queryset = queryset.filter(**{key: value})
+        
+        # Создаем ресурс для экспорта
+        resource = VoterExcelExportResource()
+        
+        # Экспортируем данные
+        dataset = resource.export(queryset)
+        
+        # Создаем Excel файл
+        xlsx_format = XLSX()
+        response = HttpResponse(
+            xlsx_format.export_data(dataset),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        
+        # Генерируем имя файла с текущей датой
+        current_date = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f'izbirateli_{current_date}.xlsx'
+        
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        
+        return response
+    
+    def has_export_to_excel_permission(self, request):
+        """Проверка прав на выгрузку в Excel"""
+        # Все пользователи с правами на просмотр могут экспортировать
+        return request.user.has_perm('elections.view_voter')
 
 
 @admin.register(UIKResults)
