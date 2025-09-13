@@ -1,104 +1,93 @@
-// Автоматическое заполнение УИК при выборе агитатора
+// JavaScript для настройки полей даты в админке избирателей
+
 document.addEventListener('DOMContentLoaded', function() {
-    const agitatorField = document.querySelector('#id_agitator');
-    const uikField = document.querySelector('#id_uik');
-    
-    if (agitatorField && uikField) {
-        // Функция для обновления УИК
-        function updateUIK(agitatorId) {
-            if (agitatorId) {
-                // Получаем УИК агитатора через AJAX
-                fetch(`/admin/elections/user/${agitatorId}/uik/`)
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data.uik_id) {
-                            uikField.value = data.uik_id;
-                            // Обновляем отображение поля
-                            if (uikField.tagName === 'SELECT') {
-                                uikField.dispatchEvent(new Event('change'));
-                            }
-                        }
-                    })
-                    .catch(error => {
-                        console.error('Ошибка при получении УИК агитатора:', error);
-                    });
-            } else {
-                // Очищаем УИК если агитатор не выбран
-                uikField.value = '';
-                if (uikField.tagName === 'SELECT') {
-                    uikField.dispatchEvent(new Event('change'));
-                }
-            }
-        }
+    // Функция для уменьшения ширины полей даты и колонок
+    function resizeDateFields() {
+        // Находим все поля даты более агрессивно
+        const allInputs = document.querySelectorAll('input[type="text"]');
         
-        // Обработчик для обычного select (если автодополнение отключено)
-        agitatorField.addEventListener('change', function() {
-            updateUIK(this.value);
-        });
-        
-        // Обработчик для автодополнения (Unfold)
-        // Слушаем изменения в скрытом поле (основной способ)
-        agitatorField.addEventListener('change', function() {
-            updateUIK(this.value);
-        });
-        
-        // Дополнительные обработчики для автодополнения
-        // Слушаем клики по результатам поиска
-        document.addEventListener('click', function(e) {
-            if (e.target.classList.contains('select2-results__option') || 
-                e.target.closest('.select2-results__option')) {
-                // Задержка для обновления скрытого поля
-                setTimeout(() => {
-                    updateUIK(agitatorField.value);
-                }, 200);
+        allInputs.forEach(function(input) {
+            const name = input.name || '';
+            const id = input.id || '';
+            
+            // Проверяем, является ли поле полем даты
+            if (name.includes('planned_date') || name.includes('voting_date') || 
+                id.includes('planned_date') || id.includes('voting_date')) {
+                
+                // Применяем стили принудительно (100px для всех полей даты)
+                input.style.setProperty('width', '100px', 'important');
+                input.style.setProperty('max-width', '100px', 'important');
+                input.style.setProperty('min-width', '100px', 'important');
+                input.style.setProperty('box-sizing', 'border-box', 'important');
+                input.setAttribute('size', '10');
+                
+                // Добавляем класс для дополнительного CSS
+                input.classList.add('narrow-date-field');
             }
         });
         
-        // Слушаем события select2 (если используется)
-        $(document).on('select2:select', '#id_agitator', function(e) {
-            setTimeout(() => {
-                updateUIK(agitatorField.value);
-            }, 100);
-        });
-        
-        // Слушаем изменения через MutationObserver (для динамических изменений)
-        const observer = new MutationObserver(function(mutations) {
-            mutations.forEach(function(mutation) {
-                if (mutation.type === 'attributes' && mutation.attributeName === 'value') {
-                    if (mutation.target === agitatorField) {
-                        updateUIK(agitatorField.value);
-                    }
+        // Настраиваем ширину колонок таблицы
+        const table = document.querySelector('#result_list');
+        if (table) {
+            // Находим заголовки и ячейки для колонок даты
+            const headers = table.querySelectorAll('th');
+            const rows = table.querySelectorAll('tbody tr');
+            
+            // Колонка "Планируемая дата" (обычно 9-я)
+            if (headers[8]) { // nth-child(9) = index 8
+                headers[8].style.setProperty('width', '150px', 'important');
+                headers[8].style.setProperty('max-width', '150px', 'important');
+                headers[8].style.setProperty('min-width', '150px', 'important');
+            }
+            
+            // Колонка "Дата голосования" (обычно 10-я)
+            if (headers[9]) { // nth-child(10) = index 9
+                headers[9].style.setProperty('width', '150px', 'important');
+                headers[9].style.setProperty('max-width', '150px', 'important');
+                headers[9].style.setProperty('min-width', '150px', 'important');
+            }
+            
+            // Настраиваем ячейки в строках
+            rows.forEach(function(row) {
+                const cells = row.querySelectorAll('td');
+                if (cells[8]) { // Планируемая дата
+                    cells[8].style.setProperty('width', '150px', 'important');
+                    cells[8].style.setProperty('max-width', '150px', 'important');
+                    cells[8].style.setProperty('min-width', '150px', 'important');
                 }
-            });
-        });
-        
-        observer.observe(agitatorField, {
-            attributes: true,
-            attributeFilter: ['value']
-        });
-        
-        // Инициализация при загрузке страницы
-        if (agitatorField.value) {
-            updateUIK(agitatorField.value);
-        }
-        
-        // Дополнительный обработчик - слушаем все изменения в форме
-        const form = agitatorField.closest('form');
-        if (form) {
-            form.addEventListener('change', function(e) {
-                if (e.target === agitatorField) {
-                    updateUIK(agitatorField.value);
+                if (cells[9]) { // Дата голосования
+                    cells[9].style.setProperty('width', '150px', 'important');
+                    cells[9].style.setProperty('max-width', '150px', 'important');
+                    cells[9].style.setProperty('min-width', '150px', 'important');
                 }
             });
         }
-        
-        // Периодическая проверка (fallback)
-        let lastValue = agitatorField.value;
-        setInterval(() => {
-            if (agitatorField.value !== lastValue) {
-                lastValue = agitatorField.value;
-                updateUIK(agitatorField.value);
-            }
-        }, 500);
     }
+    
+    // Применяем стили при загрузке страницы
+    resizeDateFields();
+    
+    // Применяем стили с задержкой (на случай, если элементы загружаются асинхронно)
+    setTimeout(resizeDateFields, 100);
+    setTimeout(resizeDateFields, 500);
+    setTimeout(resizeDateFields, 1000);
+    
+    // Применяем стили при изменении DOM (для динамически добавляемых элементов)
+    const observer = new MutationObserver(function(mutations) {
+        let shouldResize = false;
+        mutations.forEach(function(mutation) {
+            if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                shouldResize = true;
+            }
+        });
+        if (shouldResize) {
+            setTimeout(resizeDateFields, 50);
+        }
+    });
+    
+    // Наблюдаем за изменениями в body
+    observer.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
 });

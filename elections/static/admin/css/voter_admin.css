@@ -1,0 +1,98 @@
+/* Стили для админки избирателей */
+
+/* Уменьшаем ширину полей даты в changelist */
+.field-planned_date input[type="text"],
+.field-voting_date input[type="text"] {
+    width: 100px !important;
+    max-width: 100px !important;
+    min-width: 100px !important;
+}
+
+/* Для полей в форме редактирования */
+.form-row .field-planned_date input[type="text"],
+.form-row .field-voting_date input[type="text"] {
+    width: 120px !important;
+    max-width: 120px !important;
+    min-width: 120px !important;
+}
+
+/* Для полей в inline формах */
+.inline-group .field-planned_date input[type="text"],
+.inline-group .field-voting_date input[type="text"] {
+    width: 100px !important;
+    max-width: 100px !important;
+    min-width: 100px !important;
+}
+
+/* Дополнительно для полей в changelist таблице */
+#result_list .field-planned_date input,
+#result_list .field-voting_date input {
+    width: 100px !important;
+    max-width: 100px !important;
+    min-width: 100px !important;
+}
+
+/* Специфичные селекторы для полей в таблице */
+#result_list td input[name*="planned_date"],
+#result_list td input[name*="voting_date"] {
+    width: 100px !important;
+    max-width: 100px !important;
+    min-width: 100px !important;
+}
+
+/* Для полей в changelist с более высоким приоритетом */
+.changelist-results .field-planned_date input,
+.changelist-results .field-voting_date input {
+    width: 100px !important;
+    max-width: 100px !important;
+    min-width: 100px !important;
+}
+
+/* Класс, добавляемый JavaScript */
+.narrow-date-field {
+    width: 100px !important;
+    max-width: 100px !important;
+    min-width: 100px !important;
+    box-sizing: border-box !important;
+}
+
+/* Максимально агрессивные стили для всех возможных селекторов */
+#result_list input[type="text"][name*="planned_date"],
+#result_list input[type="text"][name*="voting_date"],
+#changelist-form input[type="text"][name*="planned_date"],
+#changelist-form input[type="text"][name*="voting_date"],
+.changelist-results input[type="text"][name*="planned_date"],
+.changelist-results input[type="text"][name*="voting_date"] {
+    width: 100px !important;
+    max-width: 100px !important;
+    min-width: 100px !important;
+    box-sizing: border-box !important;
+}
+
+/* Стили для колонок таблицы с полями даты */
+#result_list th:nth-child(9),  /* Планируемая дата */
+#result_list th:nth-child(10), /* Дата голосования */
+#result_list td:nth-child(9),  /* Планируемая дата */
+#result_list td:nth-child(10) { /* Дата голосования */
+    width: 150px !important;
+    max-width: 150px !important;
+    min-width: 150px !important;
+}
+
+/* Альтернативные селекторы для колонок */
+#result_list .field-planned_date,
+#result_list .field-voting_date {
+    width: 150px !important;
+    max-width: 150px !important;
+    min-width: 150px !important;
+}
+
+/* Для таблицы changelist */
+.changelist-results th:nth-child(9),
+.changelist-results th:nth-child(10),
+.changelist-results td:nth-child(9),
+.changelist-results td:nth-child(10) {
+    width: 120px !important;
+    max-width: 120px !important;
+    min-width: 120px !important;
+}

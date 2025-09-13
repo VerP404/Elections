@@ -372,12 +372,12 @@ class VoterResource(resources.ModelResource):
         model = Voter
         fields = (
             'id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 
-            'phone_number', 'workplace', 'uik', 'agitator', 'planned_date',
+            'phone_number', 'workplace', 'uik', 'agitator', 'is_agitator', 'is_home_voting', 'planned_date',
             'voting_date', 'voting_method', 'confirmed_by_brigadier', 'created_at', 'updated_at', 'created_by', 'updated_by'
         )
         export_order = (
             'id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 
-            'phone_number', 'workplace', 'uik', 'agitator', 'planned_date',
+            'phone_number', 'workplace', 'uik', 'agitator', 'is_agitator', 'is_home_voting', 'planned_date',
             'voting_date', 'voting_method', 'confirmed_by_brigadier', 'created_at', 'updated_at', 'created_by', 'updated_by'
         )
         import_id_fields = ('last_name', 'first_name', 'middle_name', 'birth_date')  # Уникальные поля для импорта
@@ -522,6 +522,26 @@ class VoterResource(resources.ModelResource):
             else:
                 row['confirmed_by_brigadier'] = bool(confirmed_value)
         
+        # Обработка поля is_agitator
+        is_agitator_value = row.get('is_agitator', '')
+        if is_agitator_value:
+            if str(is_agitator_value).lower() in ['true', '1', 'да', 'yes']:
+                row['is_agitator'] = True
+            elif str(is_agitator_value).lower() in ['false', '0', 'нет', 'no']:
+                row['is_agitator'] = False
+            else:
+                row['is_agitator'] = bool(is_agitator_value)
+        
+        # Обработка поля is_home_voting
+        is_home_voting_value = row.get('is_home_voting', '')
+        if is_home_voting_value:
+            if str(is_home_voting_value).lower() in ['true', '1', 'да', 'yes']:
+                row['is_home_voting'] = True
+            elif str(is_home_voting_value).lower() in ['false', '0', 'нет', 'no']:
+                row['is_home_voting'] = False
+            else:
+                row['is_home_voting'] = bool(is_home_voting_value)
+        
         # Валидация: нельзя подтвердить голосование без даты голосования
         if row.get('confirmed_by_brigadier') and not row.get('voting_date'):
             raise ValidationError("Нельзя подтвердить голосование без указания даты голосования")
@@ -561,6 +581,7 @@ class VoterExcelExportResource(resources.ModelResource):
     voting_method_display = resources.Field(attribute='get_voting_method_display', column_name='Способ голосования')
     confirmed_by_brigadier = resources.Field(attribute='confirmed_by_brigadier', column_name='Подтверждено бригадиром')
     is_agitator = resources.Field(attribute='is_agitator', column_name='Является агитатором')
+    is_home_voting = resources.Field(attribute='is_home_voting', column_name='Голосование на дому')
     created_at = resources.Field(attribute='created_at', column_name='Дата создания')
     updated_at = resources.Field(attribute='updated_at', column_name='Дата обновления')
     
@@ -570,13 +591,13 @@ class VoterExcelExportResource(resources.ModelResource):
             'id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 
             'phone_number', 'workplace_name', 'uik_number', 'uik_address', 'brigadier_name', 
             'agitator_name', 'planned_date', 'voting_date', 'voting_method_display', 
-            'confirmed_by_brigadier', 'is_agitator', 'created_at', 'updated_at'
+            'confirmed_by_brigadier', 'is_agitator', 'is_home_voting', 'created_at', 'updated_at'
         )
         export_order = (
             'id', 'last_name', 'first_name', 'middle_name', 'birth_date', 'registration_address', 
             'phone_number', 'workplace_name', 'uik_number', 'uik_address', 'brigadier_name', 
             'agitator_name', 'planned_date', 'voting_date', 'voting_method_display', 
-            'confirmed_by_brigadier', 'is_agitator', 'created_at', 'updated_at'
+            'confirmed_by_brigadier', 'is_agitator', 'is_home_voting', 'created_at', 'updated_at'
         )
         skip_unchanged = True
         report_skipped = True
@@ -607,6 +628,10 @@ class VoterExcelExportResource(resources.ModelResource):
     def dehydrate_is_agitator(self, voter):
         """Преобразуем булево значение в текст"""
         return 'Да' if voter.is_agitator else 'Нет'
+    
+    def dehydrate_is_home_voting(self, voter):
+        """Преобразуем булево значение в текст"""
+        return 'Да' if voter.is_home_voting else 'Нет'
     
     def dehydrate_birth_date(self, voter):
         """Форматируем дату рождения"""
@@ -1037,10 +1062,38 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     export_form_class = ExportForm
     # export_form_class = SelectableFieldsExportForm  # Альтернативный вариант с выбором полей
     
-    list_display = ['id', 'full_name', 'birth_date_display', 'uik', 'brigadier_display', 'agitator', 'is_agitator', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
-    list_filter = ['voting_method', 'confirmed_by_brigadier', 'is_agitator', 'uik', 'uik__brigadier', 'agitator', 'workplace', 'planned_date', 'voting_date', 'created_at']
+    class Media:
+        css = {
+            'all': ('admin/css/voter_admin.css',)
+        }
+        js = ('admin/js/voter_admin.js',)
+    
+    def get_changelist_form(self, request, **kwargs):
+        """Переопределяем форму changelist для настройки виджетов полей даты"""
+        form = super().get_changelist_form(request, **kwargs)
+        
+        if form:
+            # Настраиваем виджеты для полей даты
+            if 'planned_date' in form.base_fields:
+                planned_date_widget = form.base_fields['planned_date'].widget
+                planned_date_widget.attrs.update({
+                    'style': 'width: 100px !important; max-width: 100px !important; min-width: 100px !important;',
+                    'size': '10'
+                })
+            
+            if 'voting_date' in form.base_fields:
+                voting_date_widget = form.base_fields['voting_date'].widget
+                voting_date_widget.attrs.update({
+                    'style': 'width: 100px !important; max-width: 100px !important; min-width: 100px !important;',
+                    'size': '10'
+                })
+        
+        return form
+    
+    list_display = ['id', 'full_name', 'birth_date_display', 'uik', 'brigadier_display', 'agitator', 'is_agitator', 'is_home_voting', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
+    list_filter = ['voting_method', 'confirmed_by_brigadier', 'is_agitator', 'is_home_voting', 'uik', 'uik__brigadier', 'agitator', 'workplace', 'planned_date', 'voting_date', 'created_at']
     search_fields = ['id', 'last_name', 'first_name', 'middle_name']
-    list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'is_agitator']
+    list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'is_agitator', 'is_home_voting']
     list_per_page = 50
     autocomplete_fields = ['agitator']
     ordering = ['id']
@@ -1199,7 +1252,8 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         """Динамические поля в зависимости от роли"""
         base_fields = (
             ('last_name', 'first_name', 'middle_name', 'birth_date'),
-            ('phone_number', 'workplace', 'registration_address')
+            ('phone_number', 'workplace', 'registration_address'),
+            ('is_agitator', 'is_home_voting')
         )
         
         if request.user.role == 'agitator':

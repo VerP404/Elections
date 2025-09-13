@@ -332,6 +332,10 @@ class Voter(models.Model):
     # Флаг агитатора
     is_agitator = models.BooleanField('Агитатор', default=False,
                                      help_text='Отметить, если избиратель является агитатором')
+    
+    # Флаг голосования на дому
+    is_home_voting = models.BooleanField('На дому', default=False,
+                                        help_text='Отметить, если избиратель запланирован на голосование на дому')
 
     # Планирование
     planned_date = models.DateField(
