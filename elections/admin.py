@@ -1736,42 +1736,25 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
                         error_count += 1
                         errors.append(f"ID {voter.id} ({voter.get_full_name()}): {str(e)}")
                 
-                # Показываем результаты
-                if updated_count > 0:
-                    messages.success(request, f"✅ Успешно обновлено записей: {updated_count}")
-                    for voter_info in updated_voters[:5]:  # Показываем первые 5 обновленных
-                        messages.success(request, f"  • {voter_info}")
-                    if len(updated_voters) > 5:
-                        messages.success(request, f"  ... и еще {len(updated_voters) - 5} записей")
+                # Подготавливаем данные для модального окна
+                result_data = {
+                    'updated': updated_count,
+                    'skipped': skipped_count,
+                    'errors': error_count,
+                    'updated_list': updated_voters[:10],  # Показываем первые 10
+                    'skipped_list': skipped_voters[:10],  # Показываем первые 10
+                    'error_list': errors[:10],  # Показываем первые 10
+                    'show_modal': True
+                }
                 
-                if skipped_count > 0:
-                    messages.info(request, f"⏭️ Пропущено записей (данные уже заполнены): {skipped_count}")
-                    for voter_info in skipped_voters[:5]:  # Показываем первые 5 пропущенных
-                        messages.info(request, f"  • {voter_info}")
-                    if len(skipped_voters) > 5:
-                        messages.info(request, f"  ... и еще {len(skipped_voters) - 5} записей")
-                
-                if error_count > 0:
-                    messages.warning(request, f"❌ Записей с ошибками: {error_count}")
-                    for error in errors[:5]:  # Показываем первые 5 ошибок
-                        messages.error(request, f"  • {error}")
-                    if len(errors) > 5:
-                        messages.error(request, f"  ... и еще {len(errors) - 5} ошибок")
-                
-                if updated_count == 0 and skipped_count == 0 and error_count == 0:
-                    messages.info(request, "ℹ️ Нет записей для обновления")
-                
-                # Если есть ошибки, показываем форму с сохраненными данными
-                if error_count > 0:
-                    context = {
-                        'title': 'Массовое подтверждение избирателей',
-                        'form': form,  # Используем форму с данными
-                        'opts': self.model._meta,
-                    }
-                    return render(request, 'admin/bulk_confirm_voters.html', context)
-                else:
-                    # Если нет ошибок, перенаправляем
-                    return HttpResponseRedirect(request.get_full_path())
+                # Всегда показываем форму с результатами в модальном окне
+                context = {
+                    'title': 'Массовое подтверждение избирателей',
+                    'form': BulkUpdateVotersForm(),  # Новая форма
+                    'opts': self.model._meta,
+                    'result_data': result_data,
+                }
+                return render(request, 'admin/bulk_confirm_voters.html', context)
         else:
             form = BulkUpdateVotersForm()
         

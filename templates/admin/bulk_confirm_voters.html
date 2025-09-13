@@ -310,6 +310,230 @@
         box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
     }
     
+    /* Модальное окно для результатов */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 1000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(4px);
+    }
+    
+    .modal-content {
+        background-color: #fff;
+        margin: 5% auto;
+        padding: 0;
+        border-radius: 12px;
+        width: 90%;
+        max-width: 800px;
+        max-height: 80vh;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+        overflow: hidden;
+        animation: modalSlideIn 0.3s ease-out;
+    }
+    
+    @keyframes modalSlideIn {
+        from {
+            opacity: 0;
+            transform: translateY(-50px) scale(0.95);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+        }
+    }
+    
+    .modal-header {
+        background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+        color: white;
+        padding: 20px 24px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid #e5e7eb;
+    }
+    
+    .modal-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .modal-close {
+        background: none;
+        border: none;
+        color: white;
+        font-size: 24px;
+        cursor: pointer;
+        padding: 4px;
+        border-radius: 4px;
+        transition: background-color 0.2s;
+    }
+    
+    .modal-close:hover {
+        background-color: rgba(255, 255, 255, 0.1);
+    }
+    
+    .modal-body {
+        padding: 24px;
+        max-height: 60vh;
+        overflow-y: auto;
+    }
+    
+    .result-section {
+        margin-bottom: 24px;
+    }
+    
+    .result-section:last-child {
+        margin-bottom: 0;
+    }
+    
+    .result-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    
+    .result-list {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 16px;
+        max-height: 200px;
+        overflow-y: auto;
+    }
+    
+    .result-item {
+        padding: 8px 0;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 0.9rem;
+        line-height: 1.4;
+    }
+    
+    .result-item:last-child {
+        border-bottom: none;
+    }
+    
+    .result-summary {
+        background: #f0f9ff;
+        border: 1px solid #bae6fd;
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 16px;
+        text-align: center;
+    }
+    
+    .result-summary h3 {
+        margin: 0 0 8px 0;
+        color: #0369a1;
+        font-size: 1.1rem;
+    }
+    
+    .result-stats {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+        gap: 16px;
+        margin-top: 16px;
+    }
+    
+    .stat-item {
+        text-align: center;
+        padding: 12px;
+        background: white;
+        border-radius: 6px;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .stat-number {
+        font-size: 1.5rem;
+        font-weight: 700;
+        margin-bottom: 4px;
+    }
+    
+    .stat-label {
+        font-size: 0.8rem;
+        color: #64748b;
+    }
+    
+    .success { color: #059669; }
+    .info { color: #0284c7; }
+    .warning { color: #d97706; }
+    .error { color: #dc2626; }
+    
+    .modal-footer {
+        padding: 16px 24px;
+        background: #f8fafc;
+        border-top: 1px solid #e5e7eb;
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+    }
+    
+    .btn-modal {
+        padding: 10px 20px;
+        border-radius: 6px;
+        font-weight: 500;
+        text-decoration: none;
+        border: none;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    
+    .btn-modal-primary {
+        background: #3b82f6;
+        color: white;
+    }
+    
+    .btn-modal-primary:hover {
+        background: #2563eb;
+    }
+    
+    .btn-modal-secondary {
+        background: #f1f5f9;
+        color: #475569;
+        border: 1px solid #e2e8f0;
+    }
+    
+    .btn-modal-secondary:hover {
+        background: #e2e8f0;
+    }
+    
+    /* Сворачиваемый блок */
+    .collapsible {
+        cursor: pointer;
+        user-select: none;
+    }
+    
+    .collapsible::after {
+        content: '▼';
+        float: right;
+        transition: transform 0.2s;
+    }
+    
+    .collapsible.collapsed::after {
+        transform: rotate(-90deg);
+    }
+    
+    .collapsible-content {
+        max-height: 200px;
+        overflow: hidden;
+        transition: max-height 0.3s ease-out;
+    }
+    
+    .collapsible-content.collapsed {
+        max-height: 0;
+    }
+
     @media (max-width: 768px) {
         .form-row {
             grid-template-columns: 1fr;
@@ -321,6 +545,15 @@
         
         .dashboard-container {
             padding: 10px;
+        }
+        
+        .modal-content {
+            width: 95%;
+            margin: 10% auto;
+        }
+        
+        .result-stats {
+            grid-template-columns: 1fr 1fr;
         }
     }
 </style>
@@ -440,4 +673,149 @@
         </form>
     </div>
 </div>
+
+<!-- Модальное окно для результатов -->
+<div id="resultsModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title">
+                <span>📊</span>
+                Результаты массового подтверждения
+            </h2>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="result-summary">
+                <h3>Сводка по результатам</h3>
+                <div class="result-stats">
+                    <div class="stat-item">
+                        <div class="stat-number success" id="updatedCount">0</div>
+                        <div class="stat-label">Обновлено</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number info" id="skippedCount">0</div>
+                        <div class="stat-label">Пропущено</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-number warning" id="errorCount">0</div>
+                        <div class="stat-label">Ошибок</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="result-section" id="updatedSection" style="display: none;">
+                <div class="result-title collapsible" onclick="toggleCollapsible(this)">
+                    <span class="success">✅</span>
+                    Успешно обновлено
+                </div>
+                <div class="result-list collapsible-content">
+                    <div id="updatedList"></div>
+                </div>
+            </div>
+            
+            <div class="result-section" id="skippedSection" style="display: none;">
+                <div class="result-title collapsible" onclick="toggleCollapsible(this)">
+                    <span class="info">⏭️</span>
+                    Пропущено (данные уже заполнены)
+                </div>
+                <div class="result-list collapsible-content">
+                    <div id="skippedList"></div>
+                </div>
+            </div>
+            
+            <div class="result-section" id="errorSection" style="display: none;">
+                <div class="result-title collapsible" onclick="toggleCollapsible(this)">
+                    <span class="error">❌</span>
+                    Ошибки
+                </div>
+                <div class="result-list collapsible-content">
+                    <div id="errorList"></div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn-modal btn-modal-primary" onclick="closeModal()">Закрыть</button>
+            <a href="{% url 'admin:elections_voter_changelist' %}" class="btn-modal btn-modal-secondary">К списку избирателей</a>
+        </div>
+    </div>
+</div>
+
+<script>
+// Функции для работы с модальным окном
+function showModal() {
+    document.getElementById('resultsModal').style.display = 'block';
+    document.body.style.overflow = 'hidden';
+}
+
+function closeModal() {
+    document.getElementById('resultsModal').style.display = 'none';
+    document.body.style.overflow = 'auto';
+}
+
+function toggleCollapsible(element) {
+    element.classList.toggle('collapsed');
+    const content = element.nextElementSibling;
+    content.classList.toggle('collapsed');
+}
+
+// Закрытие модального окна при клике вне его
+window.onclick = function(event) {
+    const modal = document.getElementById('resultsModal');
+    if (event.target === modal) {
+        closeModal();
+    }
+}
+
+// Закрытие модального окна по Escape
+document.addEventListener('keydown', function(event) {
+    if (event.key === 'Escape') {
+        closeModal();
+    }
+});
+
+// Функция для отображения результатов
+function displayResults(data) {
+    // Обновляем счетчики
+    document.getElementById('updatedCount').textContent = data.updated || 0;
+    document.getElementById('skippedCount').textContent = data.skipped || 0;
+    document.getElementById('errorCount').textContent = data.errors || 0;
+    
+    // Показываем секции только если есть данные
+    if (data.updated > 0) {
+        document.getElementById('updatedSection').style.display = 'block';
+        document.getElementById('updatedList').innerHTML = data.updatedList || '';
+    }
+    
+    if (data.skipped > 0) {
+        document.getElementById('skippedSection').style.display = 'block';
+        document.getElementById('skippedList').innerHTML = data.skippedList || '';
+    }
+    
+    if (data.errors > 0) {
+        document.getElementById('errorSection').style.display = 'block';
+        document.getElementById('errorList').innerHTML = data.errorList || '';
+    }
+    
+    // Показываем модальное окно
+    showModal();
+}
+
+// Проверяем, есть ли данные для отображения в модальном окне
+document.addEventListener('DOMContentLoaded', function() {
+    {% if result_data and result_data.show_modal %}
+        // Используем данные из Django контекста
+        const resultData = {
+            updated: {{ result_data.updated|default:0 }},
+            skipped: {{ result_data.skipped|default:0 }},
+            errors: {{ result_data.errors|default:0 }},
+            updatedList: `{% for item in result_data.updated_list %}<div class="result-item">{{ item|escapejs }}</div>{% endfor %}`,
+            skippedList: `{% for item in result_data.skipped_list %}<div class="result-item">{{ item|escapejs }}</div>{% endfor %}`,
+            errorList: `{% for item in result_data.error_list %}<div class="result-item">{{ item|escapejs }}</div>{% endfor %}`
+        };
+        
+        // Показываем модальное окно
+        displayResults(resultData);
+    {% endif %}
+});
+</script>
 {% endblock %}
