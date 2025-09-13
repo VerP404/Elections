@@ -1679,24 +1679,53 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
                 voters = Voter.objects.filter(id__in=voter_ids)
                 
                 updated_count = 0
+                skipped_count = 0
                 error_count = 0
                 errors = []
+                updated_voters = []
+                skipped_voters = []
                 
                 for voter in voters:
                     try:
-                        # Обновляем поля
-                        voter.voting_date = voting_date
-                        voter.voting_method = voting_method
-                        if confirmed_by_brigadier:
+                        # Проверяем, какие поля нужно обновить
+                        needs_update = False
+                        changes = []
+                        
+                        # Проверяем дату голосования
+                        if not voter.voting_date and voting_date:
+                            voter.voting_date = voting_date
+                            needs_update = True
+                            changes.append("дата голосования")
+                        elif voter.voting_date:
+                            skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - дата голосования уже заполнена")
+                        
+                        # Проверяем способ голосования
+                        if not voter.voting_method and voting_method:
+                            voter.voting_method = voting_method
+                            needs_update = True
+                            changes.append("способ голосования")
+                        elif voter.voting_method:
+                            skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - способ голосования уже заполнен")
+                        
+                        # Проверяем подтверждение бригадиром
+                        if confirmed_by_brigadier and not voter.confirmed_by_brigadier:
                             voter.confirmed_by_brigadier = True
+                            needs_update = True
+                            changes.append("подтверждение бригадиром")
+                        elif voter.confirmed_by_brigadier:
+                            skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - уже подтверждено бригадиром")
                         
-                        # Сохраняем запрос для валидации
-                        voter._request = request
-                        
-                        # Вызываем валидацию и сохраняем
-                        voter.clean()
-                        voter.save()
-                        updated_count += 1
+                        if needs_update:
+                            # Сохраняем запрос для валидации
+                            voter._request = request
+                            
+                            # Вызываем валидацию и сохраняем
+                            voter.clean()
+                            voter.save()
+                            updated_count += 1
+                            updated_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - обновлено: {', '.join(changes)}")
+                        else:
+                            skipped_count += 1
                         
                     except ValidationError as e:
                         error_count += 1
@@ -1709,17 +1738,28 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
                 
                 # Показываем результаты
                 if updated_count > 0:
-                    messages.success(request, f"Успешно обновлено записей: {updated_count}")
+                    messages.success(request, f"✅ Успешно обновлено записей: {updated_count}")
+                    for voter_info in updated_voters[:5]:  # Показываем первые 5 обновленных
+                        messages.success(request, f"  • {voter_info}")
+                    if len(updated_voters) > 5:
+                        messages.success(request, f"  ... и еще {len(updated_voters) - 5} записей")
+                
+                if skipped_count > 0:
+                    messages.info(request, f"⏭️ Пропущено записей (данные уже заполнены): {skipped_count}")
+                    for voter_info in skipped_voters[:5]:  # Показываем первые 5 пропущенных
+                        messages.info(request, f"  • {voter_info}")
+                    if len(skipped_voters) > 5:
+                        messages.info(request, f"  ... и еще {len(skipped_voters) - 5} записей")
                 
                 if error_count > 0:
-                    messages.warning(request, f"Записей с ошибками: {error_count}")
-                    for error in errors[:10]:  # Показываем первые 10 ошибок
-                        messages.error(request, error)
-                    if len(errors) > 10:
-                        messages.error(request, f"... и еще {len(errors) - 10} ошибок")
+                    messages.warning(request, f"❌ Записей с ошибками: {error_count}")
+                    for error in errors[:5]:  # Показываем первые 5 ошибок
+                        messages.error(request, f"  • {error}")
+                    if len(errors) > 5:
+                        messages.error(request, f"  ... и еще {len(errors) - 5} ошибок")
                 
-                if updated_count == 0 and error_count == 0:
-                    messages.info(request, "Нет записей для обновления")
+                if updated_count == 0 and skipped_count == 0 and error_count == 0:
+                    messages.info(request, "ℹ️ Нет записей для обновления")
                 
                 # Если есть ошибки, показываем форму с сохраненными данными
                 if error_count > 0:
