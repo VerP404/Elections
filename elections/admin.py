@@ -450,9 +450,9 @@ class VoterResource(resources.ModelResource):
         from datetime import date
         
         # Проверяем обязательные поля
-        if not row.get('last_name'):
+        if not row.get('last_name') or not str(row.get('last_name')).strip():
             raise ValidationError("Фамилия обязательна")
-        if not row.get('first_name'):
+        if not row.get('first_name') or not str(row.get('first_name')).strip():
             raise ValidationError("Имя обязательно")
         if not row.get('birth_date'):
             raise ValidationError("Дата рождения обязательна")
@@ -1317,11 +1317,16 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             ('is_agitator', 'is_home_voting')
         )
         
+        # Поля планирования - УИК скрыт при создании, показывается при редактировании
+        planning_fields = ['agitator', 'planned_date']
+        if obj:  # При редактировании показываем УИК
+            planning_fields.append('uik')
+        
         if request.user.role == 'agitator':
             return (
                 ('Персональные данные', {'fields': base_fields}),
                 ('Планирование', {
-                    'fields': ('agitator', 'planned_date'),
+                    'fields': planning_fields,
                     'description': 'Выберите агитатора. УИК автоматически заполнится из УИК агитатора.'
                 }),
             )
@@ -1330,7 +1335,7 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             return (
                 ('Персональные данные', {'fields': base_fields}),
                 ('Планирование', {
-                    'fields': ('agitator', 'planned_date'),
+                    'fields': planning_fields,
                     'description': 'Выберите агитатора. УИК автоматически заполнится из УИК агитатора.'
                 }),
                 ('Голосование', {
@@ -1343,7 +1348,7 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             return (
                 ('Персональные данные', {'fields': base_fields}),
                 ('Планирование', {
-                    'fields': ('agitator', 'planned_date'),
+                    'fields': planning_fields,
                     'description': 'Выберите агитатора. УИК автоматически заполнится из УИК агитатора.'
                 }),
                 ('Голосование', {'fields': ('voting_date', 'voting_method', 'confirmed_by_brigadier')}),
@@ -1352,6 +1357,10 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
     def get_readonly_fields(self, request, obj=None):
         """Поля только для чтения"""
         readonly_fields = list(super().get_readonly_fields(request, obj))
+        
+        # УИК только для чтения при редактировании (автоматически заполняется из агитатора)
+        if obj:
+            readonly_fields.extend(['uik'])
         
         if request.user.role == 'agitator':
             readonly_fields.extend(['confirmed_by_brigadier'])

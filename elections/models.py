@@ -411,6 +411,16 @@ class Voter(models.Model):
         """Валидация модели"""
         super().clean()
 
+        # Проверяем обязательные поля ФИО
+        if not self.last_name or not self.last_name.strip():
+            raise ValidationError({
+                'last_name': 'Фамилия обязательна'
+            })
+        if not self.first_name or not self.first_name.strip():
+            raise ValidationError({
+                'first_name': 'Имя обязательно'
+            })
+
         # Проверяем обязательные поля
         if not self.agitator:
             raise ValidationError({
@@ -427,7 +437,7 @@ class Voter(models.Model):
                     'agitator': f'У агитатора {self.agitator.get_full_name()} не назначен УИК'
                 })
             
-            # Проверяем, что агитатор работает в указанном УИК
+            # Проверяем, что агитатор работает в указанном УИК (если УИК уже указан)
             if self.uik and not self.uik.agitators.filter(id=self.agitator.id).exists():
                 # Если УИК не соответствует УИК агитатора, автоматически обновляем УИК
                 # Это происходит в методе save(), поэтому здесь просто предупреждаем
@@ -472,9 +482,8 @@ class Voter(models.Model):
                 # Обновляем УИК избирателя на УИК агитатора
                 self.uik = agitator_uik
         
-        # Валидируем только если есть агитатор
-        if self.agitator:
-            self.clean()
+        # Валидируем модель
+        self.clean()
         
         super().save(*args, **kwargs)
 
