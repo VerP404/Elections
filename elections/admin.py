@@ -1395,7 +1395,19 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
             )
             return
         
-        # УИК автоматически заполняется из агитатора в методе save модели
+        # Автоматически заполняем УИК из агитатора ПЕРЕД сохранением
+        if obj.agitator:
+            try:
+                # Проверяем, есть ли уже УИК
+                if not obj.uik:
+                    agitator_uik = obj.agitator.assigned_uiks_as_agitator.first()
+                    if agitator_uik:
+                        obj.uik = agitator_uik
+            except:
+                # Если УИК еще не заполнен, заполняем его
+                agitator_uik = obj.agitator.assigned_uiks_as_agitator.first()
+                if agitator_uik:
+                    obj.uik = agitator_uik
         
         # Вызываем валидацию модели
         try:
