@@ -367,6 +367,17 @@ def get_sidebar_navigation(request):
                 },
             ],
         },
+        {
+            "title": "Настройки",
+            "separator": True,
+            "items": [
+                {
+                    "title": "Блокировки дат голосования",
+                    "icon": "block",
+                    "link": lambda request: "/admin/elections/votingdateblock/",
+                },
+            ],
+        },
     ]
 
 # Настройки логирования для отладки

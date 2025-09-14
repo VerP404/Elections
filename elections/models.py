@@ -420,6 +420,32 @@ class Voter(models.Model):
             raise ValidationError({
                 'first_name': 'Имя обязательно'
             })
+        
+        # Проверяем, не заблокирована ли дата голосования (только если дата изменилась)
+        if self.voting_date and self.pk:  # Только для существующих записей
+            try:
+                old_voter = Voter.objects.get(pk=self.pk)
+                # Проверяем блокировку только если дата изменилась
+                if self.voting_date != old_voter.voting_date:
+                    try:
+                        date_block = VotingDateBlock.objects.get(voting_date=self.voting_date)
+                        if date_block.is_blocked:
+                            raise ValidationError({
+                                'voting_date': f'Дата {self.voting_date.strftime("%d.%m.%Y")} заблокирована для голосования'
+                            })
+                    except VotingDateBlock.DoesNotExist:
+                        pass  # Дата не заблокирована
+            except Voter.DoesNotExist:
+                pass  # Новая запись, проверку не делаем
+        elif self.voting_date and not self.pk:  # Для новых записей
+            try:
+                date_block = VotingDateBlock.objects.get(voting_date=self.voting_date)
+                if date_block.is_blocked:
+                    raise ValidationError({
+                        'voting_date': f'Дата {self.voting_date.strftime("%d.%m.%Y")} заблокирована для голосования'
+                    })
+            except VotingDateBlock.DoesNotExist:
+                pass  # Дата не заблокирована
 
         # Проверяем обязательные поля
         if not self.agitator:
@@ -476,6 +502,39 @@ class Voter(models.Model):
             raise ValidationError({
                 'voting_method': 'При указании даты голосования необходимо указать способ голосования'
             })
+        
+        # Блокировка изменения дат голосования для подтвержденных голосований
+        if self.pk:  # Только для существующих записей
+            try:
+                old_voter = Voter.objects.get(pk=self.pk)
+                # Если есть подтверждение и пытаемся изменить дату голосования (но не снимаем подтверждение)
+                if (old_voter.confirmed_by_brigadier and 
+                    self.confirmed_by_brigadier and  # Подтверждение остается
+                    self.voting_date != old_voter.voting_date):
+                    raise ValidationError({
+                        'voting_date': f'Нельзя изменить дату голосования {old_voter.voting_date.strftime("%d.%m.%Y")} - голосование уже подтверждено. Сначала снимите подтверждение.'
+                    })
+                # Если есть подтверждение и пытаемся изменить способ голосования (но не снимаем подтверждение)
+                if (old_voter.confirmed_by_brigadier and 
+                    self.confirmed_by_brigadier and  # Подтверждение остается
+                    self.voting_method != old_voter.voting_method):
+                    raise ValidationError({
+                        'voting_method': f'Нельзя изменить способ голосования для подтвержденного голосования {old_voter.voting_date.strftime("%d.%m.%Y")}. Сначала снимите подтверждение.'
+                    })
+                # Если пытаемся снять подтверждение, но дата заблокирована
+                if (old_voter.confirmed_by_brigadier and 
+                    not self.confirmed_by_brigadier and 
+                    old_voter.voting_date):
+                    try:
+                        date_block = VotingDateBlock.objects.get(voting_date=old_voter.voting_date)
+                        if date_block.is_blocked:
+                            raise ValidationError({
+                                'confirmed_by_brigadier': f'Нельзя снять подтверждение - дата {old_voter.voting_date.strftime("%d.%m.%Y")} заблокирована'
+                            })
+                    except VotingDateBlock.DoesNotExist:
+                        pass  # Дата не заблокирована
+            except Voter.DoesNotExist:
+                pass  # Новая запись, проверку не делаем
 
     def save(self, *args, **kwargs):
         """Переопределяем save для валидации и автоматического заполнения УИК"""
@@ -853,3 +912,27 @@ def update_voters_uik_on_agitator_change(sender, instance, action, pk_set, **kwa
                     
             except User.DoesNotExist:
                 continue
+
+
+class VotingDateBlock(models.Model):
+    """Модель для блокировки дат голосования"""
+    
+    voting_date = models.DateField('Дата голосования', unique=True)
+    is_blocked = models.BooleanField('Заблокирована', default=False, 
+                                   help_text='Если отмечено, то эту дату нельзя использовать для голосования')
+    created_at = models.DateTimeField('Дата создания', auto_now_add=True)
+    updated_at = models.DateTimeField('Дата обновления', auto_now=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, 
+                                 verbose_name='Создал', related_name='created_voting_date_blocks')
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, 
+                                 verbose_name='Обновил', related_name='updated_voting_date_blocks')
+    
+    def __str__(self):
+        status = "🔒 Заблокирована" if self.is_blocked else "✅ Доступна"
+        return f"{self.voting_date.strftime('%d.%m.%Y')} - {status}"
+    
+    class Meta:
+        db_table = 'voting_date_blocks'
+        verbose_name = 'Блокировка даты голосования'
+        verbose_name_plural = 'Блокировки дат голосования'
+        ordering = ['voting_date']

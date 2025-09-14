@@ -23,7 +23,7 @@ from django.contrib import messages
 from django.http import HttpResponseRedirect
 from datetime import date
 
-from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, UIKResultsDaily, Analytics
+from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, UIKResultsDaily, Analytics, VotingDateBlock
 
 
 # Кастомные фильтры для VoterAdmin
@@ -99,8 +99,8 @@ class BulkUpdateVotersForm(forms.Form):
     
     voting_date = forms.DateField(
         label='Дата голосования',
-        initial=date.today,
-        help_text='Дата голосования (по умолчанию сегодняшняя)'
+        initial=date(2025, 9, 14),  # По умолчанию 14 сентября
+        help_text='Дата голосования. Доступны только даты 12, 13, 14 сентября 2025 года'
     )
     
     voting_method = forms.ChoiceField(
@@ -141,6 +141,32 @@ class BulkUpdateVotersForm(forms.Form):
             return ids
         except ValueError:
             raise ValidationError('ID должны быть числами, разделенными запятыми')
+    
+    def clean_voting_date(self):
+        """Валидация даты голосования"""
+        voting_date = self.cleaned_data.get('voting_date')
+        if voting_date:
+            allowed_dates = [date(2025, 9, 12), date(2025, 9, 13), date(2025, 9, 14)]
+            if voting_date not in allowed_dates:
+                raise ValidationError('Дата голосования должна быть 12, 13 или 14 сентября 2025 года')
+            
+            # Проверяем, не заблокирована ли дата
+            try:
+                date_block = VotingDateBlock.objects.get(voting_date=voting_date)
+                if date_block.is_blocked:
+                    raise ValidationError(f'Дата {voting_date.strftime("%d.%m.%Y")} заблокирована для голосования')
+            except VotingDateBlock.DoesNotExist:
+                pass  # Дата не заблокирована
+        return voting_date
+    
+    def clean(self):
+        """Общая валидация формы"""
+        cleaned_data = super().clean()
+        voting_date = cleaned_data.get('voting_date')
+        voter_ids = cleaned_data.get('voter_ids', [])
+        
+        
+        return cleaned_data
 
 
 # Секции для Unfold
@@ -1781,25 +1807,68 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
                         
                         # Проверяем дату голосования
                         if not voter.voting_date and voting_date:
-                            voter.voting_date = voting_date
-                            needs_update = True
-                            changes.append("дата голосования")
+                            # Блокируем установку дат для подтвержденных голосований
+                            if voter.confirmed_by_brigadier:
+                                skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - нельзя установить дату для подтвержденного голосования")
+                            else:
+                                voter.voting_date = voting_date
+                                needs_update = True
+                                changes.append("дата голосования")
                         elif voter.voting_date:
-                            skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - дата голосования уже заполнена")
+                            # Если пытаемся изменить дату у подтвержденного голосования
+                            if voter.confirmed_by_brigadier:
+                                skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - дата голосования {voter.voting_date.strftime('%d.%m.%Y')} заблокирована (подтверждено)")
+                            else:
+                                # Проверяем, пытаемся ли изменить дату на другую
+                                if voting_date and voting_date != voter.voting_date:
+                                    skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - дата голосования уже заполнена ({voter.voting_date.strftime('%d.%m.%Y')})")
+                                # Если дата не меняется, то ничего не делаем (не добавляем в skipped_voters)
                         
                         # Проверяем способ голосования
                         if not voter.voting_method and voting_method:
-                            voter.voting_method = voting_method
-                            needs_update = True
-                            changes.append("способ голосования")
+                            # Блокируем установку способа голосования для подтвержденных голосований
+                            if voter.confirmed_by_brigadier:
+                                skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - нельзя установить способ голосования для подтвержденного голосования")
+                            else:
+                                voter.voting_method = voting_method
+                                needs_update = True
+                                changes.append("способ голосования")
                         elif voter.voting_method:
-                            skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - способ голосования уже заполнен")
+                            # Если пытаемся изменить способ голосования у подтвержденного голосования
+                            if voter.confirmed_by_brigadier:
+                                skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - способ голосования заблокирован (подтверждено)")
+                            else:
+                                # Проверяем, пытаемся ли изменить способ голосования на другой
+                                if voting_method and voting_method != voter.voting_method:
+                                    skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - способ голосования уже заполнен ({voter.get_voting_method_display()})")
+                                # Если способ голосования не меняется, то ничего не делаем (не добавляем в skipped_voters)
                         
                         # Проверяем подтверждение бригадиром
                         if confirmed_by_brigadier and not voter.confirmed_by_brigadier:
                             voter.confirmed_by_brigadier = True
                             needs_update = True
                             changes.append("подтверждение бригадиром")
+                        elif voter.confirmed_by_brigadier and not confirmed_by_brigadier:
+                            # Пытаемся снять подтверждение - проверяем, не заблокирована ли дата
+                            if voter.voting_date:
+                                try:
+                                    from elections.models import VotingDateBlock
+                                    date_block = VotingDateBlock.objects.get(voting_date=voter.voting_date)
+                                    if date_block.is_blocked:
+                                        skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - нельзя снять подтверждение, дата {voter.voting_date.strftime('%d.%m.%Y')} заблокирована")
+                                    else:
+                                        voter.confirmed_by_brigadier = False
+                                        needs_update = True
+                                        changes.append("снятие подтверждения бригадиром")
+                                except VotingDateBlock.DoesNotExist:
+                                    # Дата не заблокирована
+                                    voter.confirmed_by_brigadier = False
+                                    needs_update = True
+                                    changes.append("снятие подтверждения бригадиром")
+                            else:
+                                voter.confirmed_by_brigadier = False
+                                needs_update = True
+                                changes.append("снятие подтверждения бригадиром")
                         elif voter.confirmed_by_brigadier:
                             skipped_voters.append(f"ID {voter.id} ({voter.get_full_name()}) - уже подтверждено бригадиром")
                         
@@ -2583,3 +2652,47 @@ class UIKResultsDailyAdmin(ImportExportModelAdmin, ModelAdmin):
             request, 
             f'Синхронизировано {updated} записей UIKResultsDaily. Вписанные значения обновлены на расчетные для незаблокированных дней.'
         )
+
+
+@admin.register(VotingDateBlock)
+class VotingDateBlockAdmin(ModelAdmin):
+    """Админка для блокировки дат голосования"""
+    
+    list_display = ['voting_date', 'is_blocked', 'created_by', 'updated_by', 'created_at', 'updated_at']
+    list_filter = ['is_blocked', 'created_at', 'updated_at']
+    search_fields = ['voting_date']
+    ordering = ['voting_date']
+    readonly_fields = ['created_at', 'updated_at']
+    
+    fieldsets = (
+        ('Основная информация', {
+            'fields': ('voting_date', 'is_blocked')
+        }),
+        ('Системная информация', {
+            'fields': ('created_by', 'updated_by', 'created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+    
+    def save_model(self, request, obj, form, change):
+        """Автоматически устанавливаем создателя/редактора"""
+        if not change:
+            obj.created_by = request.user
+        obj.updated_by = request.user
+        super().save_model(request, obj, form, change)
+    
+    def has_view_permission(self, request, obj=None):
+        """Разрешения на просмотр"""
+        return request.user.has_perm('elections.view_votingdateblock')
+    
+    def has_add_permission(self, request):
+        """Разрешение на добавление"""
+        return request.user.has_perm('elections.add_votingdateblock')
+    
+    def has_change_permission(self, request, obj=None):
+        """Разрешение на изменение"""
+        return request.user.has_perm('elections.change_votingdateblock')
+    
+    def has_delete_permission(self, request, obj=None):
+        """Разрешение на удаление"""
+        return request.user.has_perm('elections.delete_votingdateblock')
