@@ -66,13 +66,173 @@
     .badge.success { background:#dcfce7; color:#166534; }
     .badge.warning { background:#fef3c7; color:#92400e; }
     .badge.danger { background:#fee2e2; color:#991b1b; }
+    
+    /* Стили для кнопки фильтра */
+    .filter-btn {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .filter-btn:hover {
+        background: #0056b3;
+    }
+    
+    .filter-btn.active {
+        background: #28a745;
+    }
+    
+    /* Стили для модального окна */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .modal-content {
+        background-color: #fff;
+        margin: 5% auto;
+        padding: 20px;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .modal-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #333;
+        margin: 0;
+    }
+    
+    .close {
+        color: #aaa;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+        line-height: 1;
+    }
+    
+    .close:hover {
+        color: #000;
+    }
+    
+    .filter-group {
+        margin-bottom: 20px;
+    }
+    
+    .filter-label {
+        display: block;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+    }
+    
+    .filter-checkbox {
+        margin-right: 8px;
+        transform: scale(1.1);
+    }
+    
+    .filter-checkbox-label {
+        font-size: 0.9rem;
+        color: #555;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+    
+    .filter-checkbox-label:hover {
+        color: #333;
+    }
+    
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 20px;
+        padding-top: 15px;
+        border-top: 1px solid #dee2e6;
+    }
+    
+    .btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+    
+    .btn-primary {
+        background: #007bff;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #0056b3;
+    }
+    
+    .btn-secondary {
+        background: #6c757d;
+        color: white;
+    }
+    
+    .btn-secondary:hover {
+        background: #545b62;
+    }
+    
+    .btn-success {
+        background: #28a745;
+        color: white;
+    }
+    
+    .btn-success:hover {
+        background: #1e7e34;
+    }
+    
+    /* Скрытые строки */
+    .row-hidden {
+        display: none !important;
+    }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="dashboard-header">
   <h1>Результаты по УИК, бригадирам и агитаторам</h1>
-  <a href="/admin/" class="dashboard-back">← Назад</a>
+  <div style="display: flex; align-items: center; gap: 12px;">
+    <button id="filterBtn" class="filter-btn" onclick="openFilterModal()">
+      🔍 Фильтр
+    </button>
+    <a href="/admin/" class="dashboard-back">← Назад</a>
+  </div>
   </div>
   <div class="table-container">
     <div class="table-wrapper">
@@ -255,8 +415,399 @@ setTimeout(function() {
     saveScrollPosition(); // Сохраняем позицию перед обновлением
     window.location.reload();
 }, 30000);
+
+// Функции для работы с фильтрами
+function openFilterModal() {
+    document.getElementById('filterModal').style.display = 'block';
+    loadFiltersFromStorage();
+}
+
+function closeFilterModal() {
+    document.getElementById('filterModal').style.display = 'none';
+}
+
+function applyFilters() {
+    const filters = {
+        includeDmitriev: document.getElementById('includeDmitriev').checked,
+        includeGutorova: document.getElementById('includeGutorova').checked,
+        includeOthers: document.getElementById('includeOthers').checked
+    };
+    
+    // Сохраняем фильтры в localStorage
+    localStorage.setItem('tableDashboardFilters', JSON.stringify(filters));
+    
+    // Применяем фильтры к таблице
+    applyTableFilters(filters);
+    
+    // Обновляем кнопку фильтра
+    updateFilterButton();
+    
+    // Закрываем модальное окно
+    document.getElementById('filterModal').style.display = 'none';
+}
+
+function clearFilters() {
+    // Устанавливаем фильтры по умолчанию (все включены)
+    document.getElementById('includeDmitriev').checked = true;
+    document.getElementById('includeGutorova').checked = true;
+    document.getElementById('includeOthers').checked = true;
+    
+    // Сохраняем фильтры по умолчанию в localStorage
+    const defaultFilters = {
+        includeDmitriev: true,
+        includeGutorova: true,
+        includeOthers: true
+    };
+    localStorage.setItem('tableDashboardFilters', JSON.stringify(defaultFilters));
+    
+    // Применяем фильтры к таблице
+    applyTableFilters(defaultFilters);
+    
+    // Обновляем кнопку фильтра
+    updateFilterButton();
+    
+    // Закрываем модальное окно
+    document.getElementById('filterModal').style.display = 'none';
+}
+
+function loadFiltersFromStorage() {
+    const savedFilters = localStorage.getItem('tableDashboardFilters');
+    if (savedFilters) {
+        const filters = JSON.parse(savedFilters);
+        
+        document.getElementById('includeDmitriev').checked = filters.includeDmitriev !== false;
+        document.getElementById('includeGutorova').checked = filters.includeGutorova !== false;
+        document.getElementById('includeOthers').checked = filters.includeOthers !== false;
+    } else {
+        // По умолчанию все включены
+        document.getElementById('includeDmitriev').checked = true;
+        document.getElementById('includeGutorova').checked = true;
+        document.getElementById('includeOthers').checked = true;
+    }
+}
+
+function updateFilterButton() {
+    const savedFilters = localStorage.getItem('tableDashboardFilters');
+    const filterBtn = document.getElementById('filterBtn');
+    
+    if (savedFilters) {
+        const filters = JSON.parse(savedFilters);
+        // Фильтр активен если не все группы включены
+        const hasActiveFilters = !filters.includeDmitriev || !filters.includeGutorova || !filters.includeOthers;
+        
+        if (hasActiveFilters) {
+            filterBtn.classList.add('active');
+            filterBtn.innerHTML = '🔍 Фильтр (активен)';
+        } else {
+            filterBtn.classList.remove('active');
+            filterBtn.innerHTML = '🔍 Фильтр';
+        }
+    } else {
+        // По умолчанию фильтры не активны (все включены)
+        filterBtn.classList.remove('active');
+        filterBtn.innerHTML = '🔍 Фильтр';
+    }
+}
+
+function applyTableFilters(filters) {
+    console.log('Применяем фильтры:', filters);
+    const table = document.querySelector('.uik-table');
+    const rows = table.querySelectorAll('tbody tr');
+    
+    // Сначала показываем все строки
+    rows.forEach(row => {
+        row.classList.remove('row-hidden');
+    });
+    
+    let hiddenCount = 0;
+    
+    // Скрываем строки агитаторов с нежелательными руководителями
+    if (!filters.includeDmitriev || !filters.includeGutorova || !filters.includeOthers) {
+        rows.forEach(row => {
+            if (row.classList.contains('row-agitator')) {
+                const leaderCell = row.cells[3]; // Колонка "Руководитель"
+                const leaderText = leaderCell.textContent.trim();
+                
+                let shouldHide = false;
+                
+                // Проверяем Дмитриева и связанные фамилии
+                if (!filters.includeDmitriev) {
+                    const dmitrievSurnames = ['Дмитриев', 'Беруашвили', 'Горюнова', 'Гуличева', 'Косинова', 'Масленникова', 'Пахомова', 'Ситникова', 'Солодовникова'];
+                    if (dmitrievSurnames.some(surname => leaderText.includes(surname))) {
+                        shouldHide = true;
+                        console.log('Скрываем агитатора с руководителем:', leaderText, '(Дмитриев)');
+                    }
+                }
+                
+                // Проверяем Гуторову
+                if (!filters.includeGutorova && leaderText.includes('Гуторова')) {
+                    shouldHide = true;
+                    console.log('Скрываем агитатора с руководителем:', leaderText, '(Гуторова)');
+                }
+                
+                // Проверяем прочих (тех, кто не относится к Дмитриеву и Гуторовой)
+                if (!filters.includeOthers) {
+                    const dmitrievSurnames = ['Дмитриев', 'Беруашвили', 'Горюнова', 'Гуличева', 'Косинова', 'Масленникова', 'Пахомова', 'Ситникова', 'Солодовникова'];
+                    const isDmitriev = dmitrievSurnames.some(surname => leaderText.includes(surname));
+                    const isGutorova = leaderText.includes('Гуторова');
+                    
+                    if (!isDmitriev && !isGutorova) {
+                        shouldHide = true;
+                        console.log('Скрываем агитатора с руководителем:', leaderText, '(Прочие)');
+                    }
+                }
+                
+                if (shouldHide) {
+                    row.classList.add('row-hidden');
+                    hiddenCount++;
+                }
+            }
+        });
+    }
+    
+    console.log('Скрыто строк:', hiddenCount);
+    
+    // Пересчитываем итоги
+    console.log('Начинаем пересчет итогов...');
+    recalculateTotals();
+}
+
+function recalculateTotals() {
+    console.log('Начинаем пересчет итогов...');
+    const table = document.querySelector('.uik-table');
+    const rows = table.querySelectorAll('tbody tr');
+    
+    // Сначала пересчитываем каждую строку "Итого по УИК"
+    rows.forEach((row, index) => {
+        if (row.classList.contains('row-success') || row.classList.contains('row-warning') || 
+            row.classList.contains('row-danger-light') || row.classList.contains('row-yellow')) {
+            
+            console.log(`Пересчитываем строку ${index + 1} (УИК)`);
+            
+            // Находим все агитаторы этого УИК (следующие строки до следующего УИК или конца)
+            let currentRow = row.nextElementSibling;
+            let agitatorFactTotal = 0;
+            let agitatorFact12 = 0;
+            let agitatorFact13 = 0;
+            let agitatorFact14 = 0;
+            
+            let agitatorCount = 0;
+            while (currentRow && currentRow.classList.contains('row-agitator')) {
+                // Считаем только видимые строки агитаторов
+                if (!currentRow.classList.contains('row-hidden')) {
+                    const factTotal = parseInt(currentRow.cells[5].textContent) || 0; // Общий факт
+                    const fact12 = parseInt(currentRow.cells[8].textContent) || 0; // Факт 12.09
+                    const fact13 = parseInt(currentRow.cells[11].textContent) || 0; // Факт 13.09
+                    const fact14 = parseInt(currentRow.cells[14].textContent) || 0; // Факт 14.09
+                    
+                    agitatorFactTotal += factTotal; // Общий факт
+                    agitatorFact12 += fact12; // Факт 12.09
+                    agitatorFact13 += fact13; // Факт 13.09
+                    agitatorFact14 += fact14; // Факт 14.09
+                    
+                    agitatorCount++;
+                    console.log(`  Агитатор ${agitatorCount}: общий=${factTotal}, 12=${fact12}, 13=${fact13}, 14=${fact14}`);
+                } else {
+                    console.log(`  Агитатор скрыт`);
+                }
+                currentRow = currentRow.nextElementSibling;
+            }
+            
+            console.log(`  Итого агитаторов: ${agitatorCount}, общий факт: ${agitatorFactTotal}`);
+            
+            // Обновляем значения в строке "Итого по УИК"
+            const oldTotal = row.cells[5].textContent;
+            row.cells[5].textContent = agitatorFactTotal; // Общий факт
+            console.log(`  Обновлен общий факт: ${oldTotal} → ${agitatorFactTotal}`);
+            
+            // Пересчитываем проценты
+            const planTotal = parseInt(row.cells[4].textContent) || 0; // Общий план
+            const totalPercent = planTotal > 0 ? Math.round((agitatorFactTotal / planTotal) * 100 * 10) / 10 : 0;
+            row.cells[6].innerHTML = `<span class="badge ${totalPercent >= 100 ? 'success' : totalPercent >= 80 ? 'warning' : 'danger'}">${totalPercent}%</span>`;
+            
+            // Обновляем факты по дням
+            row.cells[8].textContent = agitatorFact12; // Факт 12.09
+            row.cells[11].textContent = agitatorFact13; // Факт 13.09
+            row.cells[14].textContent = agitatorFact14; // Факт 14.09
+            
+            // Пересчитываем проценты по дням
+            const plan12 = parseInt(row.cells[7].textContent) || 0; // План 12.09
+            const percent12 = plan12 > 0 ? Math.round((agitatorFact12 / plan12) * 100 * 10) / 10 : 0;
+            row.cells[9].innerHTML = `<span class="badge ${percent12 >= 100 ? 'success' : percent12 >= 80 ? 'warning' : 'danger'}">${percent12}%</span>`;
+            
+            const plan13 = parseInt(row.cells[10].textContent) || 0; // План 13.09
+            const percent13 = plan13 > 0 ? Math.round((agitatorFact13 / plan13) * 100 * 10) / 10 : 0;
+            row.cells[12].innerHTML = `<span class="badge ${percent13 >= 100 ? 'success' : percent13 >= 80 ? 'warning' : 'danger'}">${percent13}%</span>`;
+            
+            const plan14 = parseInt(row.cells[13].textContent) || 0; // План 14.09
+            const percent14 = plan14 > 0 ? Math.round((agitatorFact14 / plan14) * 100 * 10) / 10 : 0;
+            row.cells[15].innerHTML = `<span class="badge ${percent14 >= 100 ? 'success' : percent14 >= 80 ? 'warning' : 'danger'}">${percent14}%</span>`;
+        }
+    });
+    
+    // Теперь пересчитываем общие итоги в футере
+    // Суммируем все строки "Итого по УИК" (они уже пересчитаны выше)
+    let totalPlan = 0, totalFact = 0;
+    let totalPlan12 = 0, totalFact12 = 0;
+    let totalPlan13 = 0, totalFact13 = 0;
+    let totalPlan14 = 0, totalFact14 = 0;
+    
+    // Собираем данные со всех строк "Итого по УИК" (независимо от видимости агитаторов)
+    rows.forEach(row => {
+        if (row.classList.contains('row-success') || row.classList.contains('row-warning') || 
+            row.classList.contains('row-danger-light') || row.classList.contains('row-yellow')) {
+            
+            totalPlan += parseInt(row.cells[4].textContent) || 0; // Общий план
+            totalFact += parseInt(row.cells[5].textContent) || 0; // Общий факт (уже пересчитан)
+            totalPlan12 += parseInt(row.cells[7].textContent) || 0; // План 12.09
+            totalFact12 += parseInt(row.cells[8].textContent) || 0; // Факт 12.09 (уже пересчитан)
+            totalPlan13 += parseInt(row.cells[10].textContent) || 0; // План 13.09
+            totalFact13 += parseInt(row.cells[11].textContent) || 0; // Факт 13.09 (уже пересчитан)
+            totalPlan14 += parseInt(row.cells[13].textContent) || 0; // План 14.09
+            totalFact14 += parseInt(row.cells[14].textContent) || 0; // Факт 14.09 (уже пересчитан)
+        }
+    });
+    
+    // Обновляем итоги в футере таблицы
+    const footer = table.querySelector('tfoot tr');
+    console.log('Футер найден:', !!footer);
+    if (footer) {
+        console.log('Количество столбцов в футере:', footer.cells.length);
+        
+        // Выводим содержимое всех столбцов футера для отладки
+        for (let i = 0; i < footer.cells.length; i++) {
+            console.log(`  Столбец ${i}:`, footer.cells[i].textContent.trim());
+        }
+        
+        console.log('Обновляем футер:');
+        console.log('  totalPlan:', totalPlan);
+        console.log('  totalFact:', totalFact);
+        console.log('  totalPlan12:', totalPlan12);
+        console.log('  totalFact12:', totalFact12);
+        console.log('  totalPlan13:', totalPlan13);
+        console.log('  totalFact13:', totalFact13);
+        console.log('  totalPlan14:', totalPlan14);
+        console.log('  totalFact14:', totalFact14);
+        
+        // Проверяем существование столбцов перед обновлением
+        if (footer.cells[1]) {
+            footer.cells[1].textContent = totalPlan; // Общий план
+            console.log('  Обновлен столбец 1 (Общий план):', totalPlan);
+        }
+        
+        if (footer.cells[2]) {
+            footer.cells[2].textContent = totalFact; // Общий факт
+            console.log('  Обновлен столбец 2 (Общий факт):', totalFact);
+        }
+        
+        // Общий процент
+        if (footer.cells[3]) {
+            const totalPercent = totalPlan > 0 ? Math.round((totalFact / totalPlan) * 100 * 10) / 10 : 0;
+            footer.cells[3].innerHTML = `<span class="badge ${totalPercent >= 100 ? 'success' : totalPercent >= 80 ? 'warning' : 'danger'}">${totalPercent}%</span>`;
+        }
+        
+        if (footer.cells[4]) {
+            footer.cells[4].textContent = totalPlan12; // План 12.09
+            console.log('  Обновлен столбец 4 (План 12.09):', totalPlan12);
+        }
+        
+        if (footer.cells[5]) {
+            footer.cells[5].textContent = totalFact12; // Факт 12.09
+            console.log('  Обновлен столбец 5 (Факт 12.09):', totalFact12);
+        }
+        
+        // Процент 12.09
+        if (footer.cells[6]) {
+            const percent12 = totalPlan12 > 0 ? Math.round((totalFact12 / totalPlan12) * 100 * 10) / 10 : 0;
+            footer.cells[6].innerHTML = `<span class="badge ${percent12 >= 100 ? 'success' : percent12 >= 80 ? 'warning' : 'danger'}">${percent12}%</span>`;
+        }
+        
+        if (footer.cells[7]) {
+            footer.cells[7].textContent = totalPlan13; // План 13.09
+        }
+        
+        if (footer.cells[8]) {
+            footer.cells[8].textContent = totalFact13; // Факт 13.09
+        }
+        
+        // Процент 13.09
+        if (footer.cells[9]) {
+            const percent13 = totalPlan13 > 0 ? Math.round((totalFact13 / totalPlan13) * 100 * 10) / 10 : 0;
+            footer.cells[9].innerHTML = `<span class="badge ${percent13 >= 100 ? 'success' : percent13 >= 80 ? 'warning' : 'danger'}">${percent13}%</span>`;
+        }
+        
+        if (footer.cells[10]) {
+            footer.cells[10].textContent = totalPlan14; // План 14.09
+        }
+        
+        if (footer.cells[11]) {
+            footer.cells[11].textContent = totalFact14; // Факт 14.09
+        }
+        
+        // Процент 14.09
+        if (footer.cells[12]) {
+            const percent14 = totalPlan14 > 0 ? Math.round((totalFact14 / totalPlan14) * 100 * 10) / 10 : 0;
+            footer.cells[12].innerHTML = `<span class="badge ${percent14 >= 100 ? 'success' : percent14 >= 80 ? 'warning' : 'danger'}">${percent14}%</span>`;
+        }
+        
+        console.log('Футер обновлен успешно');
+    } else {
+        console.log('ОШИБКА: Футер не найден!');
+    }
+}
+
+// Закрытие модального окна при клике вне его
+window.onclick = function(event) {
+    const modal = document.getElementById('filterModal');
+    if (event.target == modal) {
+        closeFilterModal();
+    }
+}
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    // Загружаем фильтры из localStorage
+    const savedFilters = localStorage.getItem('tableDashboardFilters');
+    if (savedFilters) {
+        const filters = JSON.parse(savedFilters);
+        applyTableFilters(filters);
+    }
+    
+    updateFilterButton();
+});
 </script>
 
+<!-- Модальное окно фильтров -->
+<div id="filterModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title">Фильтры таблицы</h2>
+            <span class="close" onclick="closeFilterModal()">&times;</span>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label">Показать агитаторов с руководителями:</label>
+            <label class="filter-checkbox-label">
+                <input type="checkbox" id="includeDmitriev" class="filter-checkbox">
+                Дмитриев А.А. и связанные
+            </label>
+            <label class="filter-checkbox-label">
+                <input type="checkbox" id="includeGutorova" class="filter-checkbox">
+                Гуторова Е.В.
+            </label>
+            <label class="filter-checkbox-label">
+                <input type="checkbox" id="includeOthers" class="filter-checkbox">
+                Прочие
+            </label>
+        </div>
+        
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeFilterModal()">Отмена</button>
+            <button class="btn btn-primary" onclick="clearFilters()">Очистить</button>
+            <button class="btn btn-success" onclick="applyFilters()">Применить</button>
+        </div>
+    </div>
+</div>
 
 {% endblock %}
 
