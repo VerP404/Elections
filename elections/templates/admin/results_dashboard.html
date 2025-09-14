@@ -142,7 +142,7 @@
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 16px;
-        margin-bottom: 20px;
+        margin-bottom: 8px;
     }
     
     .stats-grid-three {
@@ -154,7 +154,7 @@
     
     .stat-item {
         text-align: center;
-        padding: 16px;
+        padding: 8px;
         border-radius: 8px;
         background: #f8fafc;
     }
@@ -194,7 +194,7 @@
         background: #e2e8f0;
         border-radius: 4px;
         overflow: hidden;
-        margin-top: 12px;
+        margin-top: 6px;
     }
     
     .progress-fill {
@@ -491,7 +491,7 @@
                         </div>
                         <div style="flex: 1; text-align: center; padding: 4px; background: #f8fafc; border-radius: 4px;">
                             <div style="font-size: 1.2rem; font-weight: 700; color: #8b5cf6;">{{ total_at_home }}</div>
-                            <div style="font-size: 0.7rem; color: #64748b;">На дому</div>
+                            <div style="font-size: 0.7rem; color: #64748b;">Дом</div>
                         </div>
                     </div>
                 </div>
@@ -516,15 +516,27 @@
                     <div class="stat-number" style="color: #1e293b;">{{ total_plan_12_sep }}</div>
                     <div class="stat-label">План 12.09</div>
                 </div>
-                <div class="stat-item">
-                    <div class="stat-number" style="color: {% if plan_12_percent >= 100 %}#059669{% elif plan_12_percent >= 80 %}#d97706{% else %}#dc2626{% endif %};">{{ total_12_sep }}</div>
-                    <div class="stat-label">Факт 12.09</div>
+                <div class="stat-item" style="display: flex; flex-direction: column; align-items: center; padding: 6px;">
+                    <div style="text-align: center; margin-bottom: 4px;">
+                        <div class="stat-number" style="color: {% if plan_12_percent >= 100 %}#059669{% elif plan_12_percent >= 80 %}#d97706{% else %}#dc2626{% endif %}; font-size: 1.6rem; margin-bottom: 2px;">{{ total_12_sep }}</div>
+                        <div class="stat-label" style="font-size: 0.75rem;">Факт 12.09</div>
+                    </div>
+                    <div style="display: flex; gap: 4px; width: 100%;">
+                        <div style="flex: 1; text-align: center; padding: 2px; background: #f8fafc; border-radius: 3px;">
+                            <div style="font-size: 1rem; font-weight: 700; color: #3b82f6;">{{ total_12_sep_uik }}</div>
+                            <div style="font-size: 0.65rem; color: #64748b;">УИК</div>
+                        </div>
+                        <div style="flex: 1; text-align: center; padding: 2px; background: #f8fafc; border-radius: 3px;">
+                            <div style="font-size: 1rem; font-weight: 700; color: #8b5cf6;">{{ total_12_sep_home }}</div>
+                            <div style="font-size: 0.65rem; color: #64748b;">Дом</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: {% if plan_12_percent > 100 %}100{% elif plan_12_percent > 0 %}{% if plan_12_percent < 1 %}1{% else %}{{ plan_12_percent|floatformat:0 }}{% endif %}{% else %}0{% endif %}%; background: {% if plan_12_percent >= 100 %}linear-gradient(90deg, #10b981 0%, #059669 100%){% elif plan_12_percent >= 80 %}linear-gradient(90deg, #f59e0b 0%, #d97706 100%){% else %}linear-gradient(90deg, #ef4444 0%, #dc2626 100%){% endif %};"></div>
             </div>
-            <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
+            <div style="text-align: center; margin-top: 2px; font-size: 0.875rem; color: #64748b;">
                 12.09: {{ plan_12_percent|floatformat:0 }}%
             </div>
             
@@ -533,15 +545,27 @@
                     <div class="stat-number" style="color: #1e293b;">{{ total_plan_13_sep }}</div>
                     <div class="stat-label">План 13.09</div>
                 </div>
-                <div class="stat-item">
-                    <div class="stat-number" style="color: {% if plan_13_percent >= 100 %}#059669{% elif plan_13_percent >= 80 %}#d97706{% else %}#dc2626{% endif %};">{{ total_13_sep }}</div>
-                    <div class="stat-label">Факт 13.09</div>
+                <div class="stat-item" style="display: flex; flex-direction: column; align-items: center; padding: 6px;">
+                    <div style="text-align: center; margin-bottom: 4px;">
+                        <div class="stat-number" style="color: {% if plan_13_percent >= 100 %}#059669{% elif plan_13_percent >= 80 %}#d97706{% else %}#dc2626{% endif %}; font-size: 1.6rem; margin-bottom: 2px;">{{ total_13_sep }}</div>
+                        <div class="stat-label" style="font-size: 0.75rem;">Факт 13.09</div>
+                    </div>
+                    <div style="display: flex; gap: 4px; width: 100%;">
+                        <div style="flex: 1; text-align: center; padding: 2px; background: #f8fafc; border-radius: 3px;">
+                            <div style="font-size: 1rem; font-weight: 700; color: #3b82f6;">{{ total_13_sep_uik }}</div>
+                            <div style="font-size: 0.65rem; color: #64748b;">УИК</div>
+                        </div>
+                        <div style="flex: 1; text-align: center; padding: 2px; background: #f8fafc; border-radius: 3px;">
+                            <div style="font-size: 1rem; font-weight: 700; color: #8b5cf6;">{{ total_13_sep_home }}</div>
+                            <div style="font-size: 0.65rem; color: #64748b;">Дом</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: {% if plan_13_percent > 100 %}100{% elif plan_13_percent > 0 %}{% if plan_13_percent < 1 %}1{% else %}{{ plan_13_percent|floatformat:0 }}{% endif %}{% else %}0{% endif %}%; background: {% if plan_13_percent >= 100 %}linear-gradient(90deg, #10b981 0%, #059669 100%){% elif plan_13_percent >= 80 %}linear-gradient(90deg, #f59e0b 0%, #d97706 100%){% else %}linear-gradient(90deg, #ef4444 0%, #dc2626 100%){% endif %};"></div>
             </div>
-            <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
+            <div style="text-align: center; margin-top: 2px; font-size: 0.875rem; color: #64748b;">
                 13.09: {{ plan_13_percent|floatformat:0 }}%
             </div>
             
@@ -550,15 +574,27 @@
                     <div class="stat-number" style="color: #1e293b;">{{ total_plan_14_sep }}</div>
                     <div class="stat-label">План 14.09</div>
                 </div>
-                <div class="stat-item">
-                    <div class="stat-number" style="color: {% if plan_14_percent >= 100 %}#059669{% elif plan_14_percent >= 80 %}#d97706{% else %}#dc2626{% endif %};">{{ total_14_sep }}</div>
-                    <div class="stat-label">Факт 14.09</div>
+                <div class="stat-item" style="display: flex; flex-direction: column; align-items: center; padding: 6px;">
+                    <div style="text-align: center; margin-bottom: 4px;">
+                        <div class="stat-number" style="color: {% if plan_14_percent >= 100 %}#059669{% elif plan_14_percent >= 80 %}#d97706{% else %}#dc2626{% endif %}; font-size: 1.6rem; margin-bottom: 2px;">{{ total_14_sep }}</div>
+                        <div class="stat-label" style="font-size: 0.75rem;">Факт 14.09</div>
+                    </div>
+                    <div style="display: flex; gap: 4px; width: 100%;">
+                        <div style="flex: 1; text-align: center; padding: 2px; background: #f8fafc; border-radius: 3px;">
+                            <div style="font-size: 1rem; font-weight: 700; color: #3b82f6;">{{ total_14_sep_uik }}</div>
+                            <div style="font-size: 0.65rem; color: #64748b;">УИК</div>
+                        </div>
+                        <div style="flex: 1; text-align: center; padding: 2px; background: #f8fafc; border-radius: 3px;">
+                            <div style="font-size: 1rem; font-weight: 700; color: #8b5cf6;">{{ total_14_sep_home }}</div>
+                            <div style="font-size: 0.65rem; color: #64748b;">Дом</div>
+                        </div>
+                    </div>
                 </div>
             </div>
             <div class="progress-bar">
                 <div class="progress-fill" style="width: {% if plan_14_percent > 100 %}100{% elif plan_14_percent > 0 %}{% if plan_14_percent < 1 %}1{% else %}{{ plan_14_percent|floatformat:0 }}{% endif %}{% else %}0{% endif %}%; background: {% if plan_14_percent >= 100 %}linear-gradient(90deg, #10b981 0%, #059669 100%){% elif plan_14_percent >= 80 %}linear-gradient(90deg, #f59e0b 0%, #d97706 100%){% else %}linear-gradient(90deg, #ef4444 0%, #dc2626 100%){% endif %};"></div>
             </div>
-            <div style="text-align: center; margin-top: 8px; font-size: 0.875rem; color: #64748b;">
+            <div style="text-align: center; margin-top: 2px; font-size: 0.875rem; color: #64748b;">
                 14.09: {{ plan_14_percent|floatformat:0 }}%
             </div>
         </div>

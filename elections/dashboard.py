@@ -372,14 +372,22 @@ def results_dashboard_callback(request, context):
             'total_plan': 0,
             'total_fact': 0,
             'plan_execution_percent': 0,
+            'total_at_uik': 0,
+            'total_at_home': 0,
             'total_plan_12_sep': 0,
             'total_12_sep': 0,
+            'total_12_sep_uik': 0,
+            'total_12_sep_home': 0,
             'plan_12_percent': 0,
             'total_plan_13_sep': 0,
             'total_13_sep': 0,
+            'total_13_sep_uik': 0,
+            'total_13_sep_home': 0,
             'plan_13_percent': 0,
             'total_plan_14_sep': 0,
             'total_14_sep': 0,
+            'total_14_sep_uik': 0,
+            'total_14_sep_home': 0,
             'plan_14_percent': 0,
             'uik_table_data': [],
             'last_update_time': None,
@@ -409,15 +417,41 @@ def results_dashboard_callback(request, context):
     total_plan_12_sep = sum(item.plan_12_sep for item in daily_data)
     total_12_sep = sum(item.get_effective_fact_12_sep() for item in daily_data)  # Используем эффективные факты
     plan_12_percent = round((total_12_sep / total_plan_12_sep * 100), 1) if total_plan_12_sep > 0 else 0
-    print(f"DEBUG: total_plan_12_sep = {total_plan_12_sep}, total_12_sep = {total_12_sep}, plan_12_percent = {plan_12_percent}")
+    
+    # Подсчет УИК/Дом для 12 сентября
+    total_12_sep_uik = Voter.objects.filter(
+        uik__in=[item.uik for item in daily_data],
+        voting_method='at_uik',
+        confirmed_by_brigadier=True,
+        voting_date=date(2025, 9, 12)
+    ).count()
+    total_12_sep_home = total_12_sep - total_12_sep_uik
     
     total_plan_13_sep = sum(item.plan_13_sep for item in daily_data)
     total_13_sep = sum(item.get_effective_fact_13_sep() for item in daily_data)  # Используем эффективные факты
     plan_13_percent = round((total_13_sep / total_plan_13_sep * 100), 1) if total_plan_13_sep > 0 else 0
     
+    # Подсчет УИК/Дом для 13 сентября
+    total_13_sep_uik = Voter.objects.filter(
+        uik__in=[item.uik for item in daily_data],
+        voting_method='at_uik',
+        confirmed_by_brigadier=True,
+        voting_date=date(2025, 9, 13)
+    ).count()
+    total_13_sep_home = total_13_sep - total_13_sep_uik
+    
     total_plan_14_sep = sum(item.plan_14_sep for item in daily_data)
     total_14_sep = sum(item.get_effective_fact_14_sep() for item in daily_data)  # Используем эффективные факты
     plan_14_percent = round((total_14_sep / total_plan_14_sep * 100), 1) if total_plan_14_sep > 0 else 0
+    
+    # Подсчет УИК/Дом для 14 сентября
+    total_14_sep_uik = Voter.objects.filter(
+        uik__in=[item.uik for item in daily_data],
+        voting_method='at_uik',
+        confirmed_by_brigadier=True,
+        voting_date=date(2025, 9, 14)
+    ).count()
+    total_14_sep_home = total_14_sep - total_14_sep_uik
     
     # Данные для таблицы
     uik_table_data = []
@@ -568,12 +602,18 @@ def results_dashboard_callback(request, context):
         'total_at_home': total_at_home,
         'total_plan_12_sep': total_plan_12_sep,
         'total_12_sep': total_12_sep,
+        'total_12_sep_uik': total_12_sep_uik,
+        'total_12_sep_home': total_12_sep_home,
         'plan_12_percent': plan_12_percent,
         'total_plan_13_sep': total_plan_13_sep,
         'total_13_sep': total_13_sep,
+        'total_13_sep_uik': total_13_sep_uik,
+        'total_13_sep_home': total_13_sep_home,
         'plan_13_percent': plan_13_percent,
         'total_plan_14_sep': total_plan_14_sep,
         'total_14_sep': total_14_sep,
+        'total_14_sep_uik': total_14_sep_uik,
+        'total_14_sep_home': total_14_sep_home,
         'plan_14_percent': plan_14_percent,
         'uik_table_data': uik_table_data,
         'last_update_time': last_update_time,
