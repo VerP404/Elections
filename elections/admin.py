@@ -26,6 +26,67 @@ from datetime import date
 from .models import User, UIK, Workplace, Voter, UIKResults, UIKAnalysis, UIKResultsDaily, Analytics
 
 
+# Кастомные фильтры для VoterAdmin
+class VotingDateFilter(SimpleListFilter):
+    """Фильтр по дате голосования (12, 13, 14 сентября 2025)"""
+    title = 'Дата голосования'
+    parameter_name = 'voting_date'
+    
+    def lookups(self, request, model_admin):
+        return (
+            ('2025-09-12', '12 сентября 2025'),
+            ('2025-09-13', '13 сентября 2025'),
+            ('2025-09-14', '14 сентября 2025'),
+            ('no_date', 'Без даты голосования'),
+        )
+    
+    def queryset(self, request, queryset):
+        if self.value() == 'no_date':
+            return queryset.filter(voting_date__isnull=True)
+        elif self.value() in ['2025-09-12', '2025-09-13', '2025-09-14']:
+            return queryset.filter(voting_date=self.value())
+        return queryset
+
+
+class PlannedDateFilter(SimpleListFilter):
+    """Фильтр по плановой дате (12, 13, 14 сентября 2025)"""
+    title = 'Плановая дата'
+    parameter_name = 'planned_date'
+    
+    def lookups(self, request, model_admin):
+        return (
+            ('2025-09-12', '12 сентября 2025'),
+            ('2025-09-13', '13 сентября 2025'),
+            ('2025-09-14', '14 сентября 2025'),
+            ('no_date', 'Без плановой даты'),
+        )
+    
+    def queryset(self, request, queryset):
+        if self.value() == 'no_date':
+            return queryset.filter(planned_date__isnull=True)
+        elif self.value() in ['2025-09-12', '2025-09-13', '2025-09-14']:
+            return queryset.filter(planned_date=self.value())
+        return queryset
+
+
+class BrigadierFilter(RelatedOnlyFieldListFilter):
+    """Фильтр по бригадиру с сортировкой по алфавиту"""
+    
+    def field_choices(self, field, request, model_admin):
+        # Получаем всех бригадиров, отсортированных по алфавиту
+        brigadiers = User.objects.filter(role='brigadier').order_by('last_name', 'first_name', 'middle_name')
+        return [(brigadier.id, brigadier.get_full_name()) for brigadier in brigadiers]
+
+
+class AgitatorFilter(RelatedOnlyFieldListFilter):
+    """Фильтр по агитатору с сортировкой по алфавиту"""
+    
+    def field_choices(self, field, request, model_admin):
+        # Получаем всех агитаторов, отсортированных по алфавиту
+        agitators = User.objects.filter(role='agitator').order_by('last_name', 'first_name', 'middle_name')
+        return [(agitator.id, agitator.get_full_name()) for agitator in agitators]
+
+
 # Форма для массового обновления избирателей
 class BulkUpdateVotersForm(forms.Form):
     """Форма для массового обновления избирателей по ID"""
@@ -1091,7 +1152,7 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         return form
     
     list_display = ['id', 'full_name', 'birth_date_display', 'uik', 'brigadier_display', 'agitator', 'is_agitator', 'is_home_voting', 'planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'voting_status_display']
-    list_filter = ['voting_method', 'confirmed_by_brigadier', 'is_agitator', 'is_home_voting', 'uik', 'uik__brigadier', 'agitator', 'workplace', 'planned_date', 'voting_date', 'created_at']
+    list_filter = ['voting_method', 'confirmed_by_brigadier', 'is_agitator', 'is_home_voting', 'uik', ('uik__brigadier', BrigadierFilter), ('agitator', AgitatorFilter), 'workplace', VotingDateFilter, PlannedDateFilter, 'created_at']
     search_fields = ['id', 'last_name', 'first_name', 'middle_name']
     list_editable = ['planned_date', 'voting_date', 'voting_method', 'confirmed_by_brigadier', 'is_agitator', 'is_home_voting']
     list_per_page = 50
@@ -1345,6 +1406,12 @@ class VoterAdmin(ImportExportModelAdmin, ModelAdmin):
         """Получение формы с дополнительными настройками"""
         form = super().get_form(request, obj, **kwargs)
         return form
+    
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        """Сортировка связанных объектов по алфавиту"""
+        if db_field.name == 'agitator':
+            kwargs['queryset'] = User.objects.filter(role='agitator').order_by('last_name', 'first_name', 'middle_name')
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
     
     
     def save_related(self, request, form, formsets, change):
