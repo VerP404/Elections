@@ -340,6 +340,163 @@
         z-index: 1000;
     }
     
+    /* Стили для кнопки фильтра */
+    .filter-btn {
+        background: #007bff;
+        color: white;
+        border: none;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+    }
+    
+    .filter-btn:hover {
+        background: #0056b3;
+    }
+    
+    .filter-btn.active {
+        background: #28a745;
+    }
+    
+    /* Стили для модального окна */
+    .modal {
+        display: none;
+        position: fixed;
+        z-index: 2000;
+        left: 0;
+        top: 0;
+        width: 100%;
+        height: 100%;
+        background-color: rgba(0, 0, 0, 0.5);
+    }
+    
+    .modal-content {
+        background-color: #fff;
+        margin: 5% auto;
+        padding: 20px;
+        border-radius: 8px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+    }
+    
+    .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 20px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid #dee2e6;
+    }
+    
+    .modal-title {
+        font-size: 1.25rem;
+        font-weight: 600;
+        color: #333;
+        margin: 0;
+    }
+    
+    .close {
+        color: #aaa;
+        font-size: 28px;
+        font-weight: bold;
+        cursor: pointer;
+        line-height: 1;
+    }
+    
+    .close:hover {
+        color: #000;
+    }
+    
+    .filter-group {
+        margin-bottom: 20px;
+    }
+    
+    .filter-label {
+        display: block;
+        font-weight: 600;
+        color: #333;
+        margin-bottom: 8px;
+        font-size: 0.9rem;
+    }
+    
+    .filter-checkbox {
+        margin-right: 8px;
+        transform: scale(1.1);
+    }
+    
+    .filter-checkbox-label {
+        font-size: 0.9rem;
+        color: #555;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        margin-bottom: 6px;
+    }
+    
+    .filter-checkbox-label:hover {
+        color: #333;
+    }
+    
+    .workplace-group {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 8px;
+    }
+    
+    .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: 10px;
+        margin-top: 20px;
+        padding-top: 15px;
+        border-top: 1px solid #dee2e6;
+    }
+    
+    .btn {
+        padding: 8px 16px;
+        border: none;
+        border-radius: 4px;
+        font-size: 0.875rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background-color 0.2s ease;
+    }
+    
+    .btn-primary {
+        background: #007bff;
+        color: white;
+    }
+    
+    .btn-primary:hover {
+        background: #0056b3;
+    }
+    
+    .btn-secondary {
+        background: #6c757d;
+        color: white;
+    }
+    
+    .btn-secondary:hover {
+        background: #545b62;
+    }
+    
+    .btn-success {
+        background: #28a745;
+        color: white;
+    }
+    
+    .btn-success:hover {
+        background: #1e7e34;
+    }
+    
     /* Стили для диаграмм */
     .chart-container {
         position: relative;
@@ -632,8 +789,13 @@
         <div class="dashboard-card" style="flex: 1; display: flex; flex-direction: column;">
             <div class="card-title" style="display: flex; justify-content: space-between; align-items: center;">
                 <span>Детализация результатов по УИК</span>
-                <div class="last-update">
-                    Обновлено: {{ last_update_time|date:"d.m.Y H:i:s" }}
+                <div style="display: flex; align-items: center; gap: 12px;">
+                    <button id="filterBtn" class="filter-btn" onclick="openFilterModal()">
+                        🔍 Фильтр
+                    </button>
+                    <div class="last-update">
+                        Обновлено: {{ last_update_time|date:"d.m.Y H:i:s" }}
+                    </div>
                 </div>
             </div>
             {% if uik_table_data %}
@@ -960,6 +1122,218 @@ document.addEventListener('DOMContentLoaded', function() {
 setTimeout(function() {
     window.location.reload();
 }, 30000);
+
+// Функции для работы с фильтрами
+function openFilterModal() {
+    document.getElementById('filterModal').style.display = 'block';
+    loadFiltersFromStorage();
+}
+
+function closeFilterModal() {
+    document.getElementById('filterModal').style.display = 'none';
+}
+
+function applyFilters() {
+    const filters = {
+        includeDmitriev: document.getElementById('includeDmitriev').checked,
+        includeGutorova: document.getElementById('includeGutorova').checked,
+        includeOthers: document.getElementById('includeOthers').checked,
+        workplaceGroups: []
+    };
+    
+    // Собираем выбранные группы мест работы
+    const workplaceCheckboxes = document.querySelectorAll('input[name="workplaceGroup"]:checked');
+    workplaceCheckboxes.forEach(checkbox => {
+        filters.workplaceGroups.push(checkbox.value);
+    });
+    
+    // Сохраняем фильтры в localStorage
+    localStorage.setItem('resultsDashboardFilters', JSON.stringify(filters));
+    
+    // Обновляем кнопку фильтра
+    updateFilterButton();
+    
+    // Закрываем модальное окно
+    closeFilterModal();
+    
+    // Перезагружаем страницу с новыми фильтрами
+    const currentUrl = new URL(window.location);
+    currentUrl.searchParams.set('filters', JSON.stringify(filters));
+    window.location.href = currentUrl.toString();
+}
+
+function clearFilters() {
+    // Устанавливаем фильтры по умолчанию (все включены)
+    document.getElementById('includeDmitriev').checked = true;
+    document.getElementById('includeGutorova').checked = true;
+    document.getElementById('includeOthers').checked = true;
+    
+    // Устанавливаем все группы мест работы как включенные
+    const workplaceCheckboxes = document.querySelectorAll('input[name="workplaceGroup"]');
+    workplaceCheckboxes.forEach(checkbox => {
+        checkbox.checked = true;
+    });
+    
+    // Сохраняем фильтры по умолчанию в localStorage
+    const allGroups = ['medicine', 'education', 'social_protection', 'other'];
+    const defaultFilters = {
+        includeDmitriev: true,
+        includeGutorova: true,
+        includeOthers: true,
+        workplaceGroups: allGroups
+    };
+    localStorage.setItem('resultsDashboardFilters', JSON.stringify(defaultFilters));
+    
+    // Обновляем кнопку фильтра
+    updateFilterButton();
+    
+    // Перезагружаем страницу с фильтрами по умолчанию
+    const currentUrl = new URL(window.location);
+    currentUrl.searchParams.set('filters', JSON.stringify(defaultFilters));
+    window.location.href = currentUrl.toString();
+}
+
+function loadFiltersFromStorage() {
+    const savedFilters = localStorage.getItem('resultsDashboardFilters');
+    if (savedFilters) {
+        const filters = JSON.parse(savedFilters);
+        
+        document.getElementById('includeDmitriev').checked = filters.includeDmitriev !== false; // По умолчанию true
+        document.getElementById('includeGutorova').checked = filters.includeGutorova !== false; // По умолчанию true
+        document.getElementById('includeOthers').checked = filters.includeOthers !== false; // По умолчанию true
+        
+        // Устанавливаем выбранные группы мест работы
+        const workplaceCheckboxes = document.querySelectorAll('input[name="workplaceGroup"]');
+        workplaceCheckboxes.forEach(checkbox => {
+            checkbox.checked = filters.workplaceGroups && filters.workplaceGroups.includes(checkbox.value);
+        });
+    } else {
+        // По умолчанию все включены
+        const workplaceCheckboxes = document.querySelectorAll('input[name="workplaceGroup"]');
+        workplaceCheckboxes.forEach(checkbox => {
+            checkbox.checked = true;
+        });
+        document.getElementById('includeDmitriev').checked = true;
+        document.getElementById('includeGutorova').checked = true;
+        document.getElementById('includeOthers').checked = true;
+    }
+}
+
+function updateFilterButton() {
+    const savedFilters = localStorage.getItem('resultsDashboardFilters');
+    const filterBtn = document.getElementById('filterBtn');
+    
+    if (savedFilters) {
+        const filters = JSON.parse(savedFilters);
+        const allGroups = ['medicine', 'education', 'social_protection', 'other'];
+        const hasWorkplaceFilter = filters.workplaceGroups && filters.workplaceGroups.length < allGroups.length;
+        // Фильтр активен если не все группы включены
+        const hasActiveFilters = !filters.includeDmitriev || !filters.includeGutorova || !filters.includeOthers || hasWorkplaceFilter;
+        
+        if (hasActiveFilters) {
+            filterBtn.classList.add('active');
+            filterBtn.innerHTML = '🔍 Фильтр (активен)';
+        } else {
+            filterBtn.classList.remove('active');
+            filterBtn.innerHTML = '🔍 Фильтр';
+        }
+    } else {
+        // По умолчанию фильтры не активны (все включены)
+        filterBtn.classList.remove('active');
+        filterBtn.innerHTML = '🔍 Фильтр';
+    }
+}
+
+// Закрытие модального окна при клике вне его
+window.onclick = function(event) {
+    const modal = document.getElementById('filterModal');
+    if (event.target == modal) {
+        closeFilterModal();
+    }
+}
+
+// Инициализация при загрузке страницы
+document.addEventListener('DOMContentLoaded', function() {
+    // Загружаем фильтры из URL параметров
+    const urlParams = new URLSearchParams(window.location.search);
+    const filtersParam = urlParams.get('filters');
+    
+    if (filtersParam) {
+        try {
+            const filters = JSON.parse(filtersParam);
+            // Сохраняем фильтры в localStorage
+            localStorage.setItem('resultsDashboardFilters', JSON.stringify(filters));
+        } catch (e) {
+            console.error('Ошибка парсинга фильтров из URL:', e);
+        }
+    } else {
+        // Если нет фильтров в URL, устанавливаем все группы как включенные по умолчанию
+        const allGroups = ['medicine', 'education', 'social_protection', 'other'];
+        const defaultFilters = {
+            includeDmitriev: true,
+            includeGutorova: true,
+            includeOthers: true,
+            workplaceGroups: allGroups
+        };
+        localStorage.setItem('resultsDashboardFilters', JSON.stringify(defaultFilters));
+    }
+    
+    updateFilterButton();
+});
 </script>
+
+<!-- Модальное окно фильтров -->
+<div id="filterModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 class="modal-title">Фильтры результатов</h2>
+            <span class="close" onclick="closeFilterModal()">&times;</span>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label">Показать избирателей:</label>
+            <label class="filter-checkbox-label">
+                <input type="checkbox" id="includeDmitriev" class="filter-checkbox">
+                Избиратели Дмитриева
+            </label>
+            <label class="filter-checkbox-label">
+                <input type="checkbox" id="includeGutorova" class="filter-checkbox">
+                Избиратели Гуторовой
+            </label>
+            <label class="filter-checkbox-label">
+                <input type="checkbox" id="includeOthers" class="filter-checkbox">
+                Прочие
+            </label>
+        </div>
+        
+        <div class="filter-group">
+            <label class="filter-label">Фильтр по группам мест работы:</label>
+            <div class="workplace-group">
+                <label class="filter-checkbox-label">
+                    <input type="checkbox" name="workplaceGroup" value="medicine" class="filter-checkbox">
+                    Медицина
+                </label>
+                <label class="filter-checkbox-label">
+                    <input type="checkbox" name="workplaceGroup" value="education" class="filter-checkbox">
+                    Образование
+                </label>
+                <label class="filter-checkbox-label">
+                    <input type="checkbox" name="workplaceGroup" value="social_protection" class="filter-checkbox">
+                    Соцзащита
+                </label>
+                <label class="filter-checkbox-label">
+                    <input type="checkbox" name="workplaceGroup" value="other" class="filter-checkbox">
+                    Прочие
+                </label>
+            </div>
+        </div>
+        
+        <div class="modal-footer">
+            <button class="btn btn-secondary" onclick="closeFilterModal()">Отмена</button>
+            <button class="btn btn-primary" onclick="clearFilters()">Очистить</button>
+            <button class="btn btn-success" onclick="applyFilters()">Применить</button>
+        </div>
+    </div>
+</div>
 
 {% endblock %}

@@ -183,6 +183,8 @@ def results_table_dashboard_callback(request, context):
 
     Новая структура: УИК -> Основной бригадир -> Дополнительные бригадиры -> Агитаторы с указанием руководителя
     """
+    from datetime import date
+    
     # Даты голосования (фиксированные требования домена)
     allowed_dates = [
         date(2025, 9, 12),
@@ -218,9 +220,14 @@ def results_table_dashboard_callback(request, context):
         plan_total = plan_12 + plan_13 + plan_14
 
         # Факт считаем только по реальным данным (избиратели с подтверждением и датой)
-        fact_12 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[0]).count()
-        fact_13 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[1]).count()
-        fact_14 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[2]).count()
+        fact_query_12 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[0])
+        fact_query_13 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[1])
+        fact_query_14 = Voter.objects.filter(uik=uik, confirmed_by_brigadier=True, voting_date=allowed_dates[2])
+        
+        
+        fact_12 = fact_query_12.count()
+        fact_13 = fact_query_13.count()
+        fact_14 = fact_query_14.count()
         fact_total = fact_12 + fact_13 + fact_14
 
         # Проценты
@@ -364,6 +371,14 @@ def results_table_dashboard_callback(request, context):
 
 def results_dashboard_callback(request, context):
     """Callback для дашборда результатов голосования"""
+    # Получаем фильтры из localStorage (передаются через JavaScript)
+    filters = request.GET.get('filters', '{}')
+    import json
+    try:
+        filters_data = json.loads(filters)
+    except:
+        filters_data = {}
+    
     # Получаем данные по дням из UIKResultsDaily
     daily_data = UIKResultsDaily.objects.select_related('uik').all()
     
@@ -394,69 +409,195 @@ def results_dashboard_callback(request, context):
         })
         return context
     
-    # Общая статистика
+    # Применяем фильтры к избирателям
+    from datetime import date
+    voter_filters = Q()
+    
+    # Фильтруем агитаторов по группам
+    include_dmitriev = filters_data.get('includeDmitriev', True)
+    include_gutorova = filters_data.get('includeGutorova', True)
+    include_others = filters_data.get('includeOthers', True)
+    
+    # Если не все группы включены, применяем фильтрацию
+    if not (include_dmitriev and include_gutorova and include_others):
+        group_filters = Q()
+        
+        if include_dmitriev:
+            # Список фамилий для Дмитриева
+            dmitriev_surnames = [
+                'Дмитриев', 'Беруашвили', 'Горюнова', 'Гуличева', 
+                'Косинова', 'Масленникова', 'Пахомова', 'Ситникова', 'Солодовникова'
+            ]
+            dmitriev_q = Q()
+            for surname in dmitriev_surnames:
+                dmitriev_q |= Q(agitator__last_name__icontains=surname)
+            group_filters |= dmitriev_q
+            
+        if include_gutorova:
+            group_filters |= Q(agitator__last_name__icontains='Гуторова')
+            
+        if include_others:
+            # Прочие - те, кто не относится к Дмитриеву и Гуторовой
+            dmitriev_surnames = [
+                'Дмитриев', 'Беруашвили', 'Горюнова', 'Гуличева', 
+                'Косинова', 'Масленникова', 'Пахомова', 'Ситникова', 'Солодовникова'
+            ]
+            others_q = Q()
+            for surname in dmitriev_surnames:
+                others_q &= ~Q(agitator__last_name__icontains=surname)
+            others_q &= ~Q(agitator__last_name__icontains='Гуторова')
+            group_filters |= others_q
+        
+        voter_filters &= group_filters
+    
+    # Фильтр по группам мест работы (включаем только выбранные группы)
+    workplace_groups = filters_data.get('workplaceGroups', [])
+    if workplace_groups:
+        # Получаем все возможные группы
+        all_groups = [choice[0] for choice in Workplace.GROUP_CHOICES]
+        # Применяем фильтр только если не все группы выбраны
+        if len(workplace_groups) < len(all_groups):
+            # Создаем условие для включения выбранных групп
+            group_conditions = Q()
+            
+            # Добавляем выбранные группы
+            for group in workplace_groups:
+                if group == 'other':
+                    # Для "Прочие" включаем избирателей с пустым workplace
+                    group_conditions |= Q(workplace__isnull=True)
+                else:
+                    # Для остальных групп включаем избирателей с соответствующей группой
+                    group_conditions |= Q(workplace__group=group)
+            
+            # Применяем условие включения
+            voter_filters &= group_conditions
+    
+    # Общая статистика с учетом фильтров
     total_plan = sum(item.total_plan for item in daily_data)
-    total_fact = sum(item.total_fact for item in daily_data)
+    
+    # Определяем, есть ли активные фильтры
+    all_groups = [choice[0] for choice in Workplace.GROUP_CHOICES]
+    # Фильтр по группам активен только если не все группы выбраны
+    has_workplace_filter = workplace_groups and len(workplace_groups) < len(all_groups)
+    
+    has_active_filters = (not include_dmitriev or not include_gutorova or not include_others or 
+                         has_workplace_filter)
+    
+    if has_active_filters:
+        # Есть фильтры - пересчитываем факты с учетом фильтров
+        filtered_voters = Voter.objects.filter(
+            uik__in=[item.uik for item in daily_data],
+            confirmed_by_brigadier=True,
+            voting_date__isnull=False
+        ).filter(voter_filters)
+        
+        # Считаем факты по дням с фильтрами
+        total_fact_12_filtered = filtered_voters.filter(voting_date=date(2025, 9, 12)).count()
+        total_fact_13_filtered = filtered_voters.filter(voting_date=date(2025, 9, 13)).count()
+        total_fact_14_filtered = filtered_voters.filter(voting_date=date(2025, 9, 14)).count()
+        total_fact = total_fact_12_filtered + total_fact_13_filtered + total_fact_14_filtered
+    else:
+        # Нет фильтров - используем существующую логику (учитывает блокировки)
+        total_fact = sum(item.get_effective_fact_12_sep() + item.get_effective_fact_13_sep() + item.get_effective_fact_14_sep() for item in daily_data)
+    
     plan_execution_percent = round((total_fact / total_plan * 100), 1) if total_plan > 0 else 0
     
-    # Подсчет голосов по способам из новой модели Voter
-    from datetime import date
+    # Подсчет голосов по способам из новой модели Voter с фильтрами
     
-    # Общий подсчет голосов В УИК (подтвержденных)
-    total_at_uik = Voter.objects.filter(
+    # Общий подсчет голосов В УИК (подтвержденных) с фильтрами
+    uik_voters_query = Voter.objects.filter(
         uik__in=[item.uik for item in daily_data],
         voting_method='at_uik',
         confirmed_by_brigadier=True,
         voting_date__isnull=False
-    ).count()
+    )
+    if has_active_filters:
+        uik_voters_query = uik_voters_query.filter(voter_filters)
+    total_at_uik = uik_voters_query.count()
     
     # На дому = общий факт - В УИК
     total_at_home = total_fact - total_at_uik
     
-    # Статистика по дням
+    # Статистика по дням с использованием расчетных значений и фильтров
     total_plan_12_sep = sum(item.plan_12_sep for item in daily_data)
-    total_12_sep = sum(item.get_effective_fact_12_sep() for item in daily_data)  # Используем эффективные факты
-    plan_12_percent = round((total_12_sep / total_plan_12_sep * 100), 1) if total_plan_12_sep > 0 else 0
+    total_plan_13_sep = sum(item.plan_13_sep for item in daily_data)
+    total_plan_14_sep = sum(item.plan_14_sep for item in daily_data)
     
-    # Подсчет УИК/Дом для 12 сентября
-    total_12_sep_uik = Voter.objects.filter(
+    # Используем правильную логику по дням
+    if has_active_filters:
+        # Применяем фильтры к расчетным значениям
+        total_12_sep = filtered_voters.filter(voting_date=date(2025, 9, 12)).count()
+        total_13_sep = filtered_voters.filter(voting_date=date(2025, 9, 13)).count()
+        total_14_sep = filtered_voters.filter(voting_date=date(2025, 9, 14)).count()
+    else:
+        # Нет фильтров - используем существующую логику (учитывает блокировки)
+        total_12_sep = sum(item.get_effective_fact_12_sep() for item in daily_data)
+        total_13_sep = sum(item.get_effective_fact_13_sep() for item in daily_data)
+        total_14_sep = sum(item.get_effective_fact_14_sep() for item in daily_data)
+    
+    plan_12_percent = round((total_12_sep / total_plan_12_sep * 100), 1) if total_plan_12_sep > 0 else 0
+    plan_13_percent = round((total_13_sep / total_plan_13_sep * 100), 1) if total_plan_13_sep > 0 else 0
+    plan_14_percent = round((total_14_sep / total_plan_14_sep * 100), 1) if total_plan_14_sep > 0 else 0
+    
+    # Подсчет УИК/Дом для каждого дня с фильтрами
+    uik_12_query = Voter.objects.filter(
         uik__in=[item.uik for item in daily_data],
         voting_method='at_uik',
         confirmed_by_brigadier=True,
         voting_date=date(2025, 9, 12)
-    ).count()
+    )
+    if has_active_filters:
+        uik_12_query = uik_12_query.filter(voter_filters)
+    total_12_sep_uik = uik_12_query.count()
     total_12_sep_home = total_12_sep - total_12_sep_uik
     
-    total_plan_13_sep = sum(item.plan_13_sep for item in daily_data)
-    total_13_sep = sum(item.get_effective_fact_13_sep() for item in daily_data)  # Используем эффективные факты
-    plan_13_percent = round((total_13_sep / total_plan_13_sep * 100), 1) if total_plan_13_sep > 0 else 0
-    
-    # Подсчет УИК/Дом для 13 сентября
-    total_13_sep_uik = Voter.objects.filter(
+    uik_13_query = Voter.objects.filter(
         uik__in=[item.uik for item in daily_data],
         voting_method='at_uik',
         confirmed_by_brigadier=True,
         voting_date=date(2025, 9, 13)
-    ).count()
+    )
+    if has_active_filters:
+        uik_13_query = uik_13_query.filter(voter_filters)
+    total_13_sep_uik = uik_13_query.count()
     total_13_sep_home = total_13_sep - total_13_sep_uik
     
-    total_plan_14_sep = sum(item.plan_14_sep for item in daily_data)
-    total_14_sep = sum(item.get_effective_fact_14_sep() for item in daily_data)  # Используем эффективные факты
-    plan_14_percent = round((total_14_sep / total_plan_14_sep * 100), 1) if total_plan_14_sep > 0 else 0
-    
-    # Подсчет УИК/Дом для 14 сентября
-    total_14_sep_uik = Voter.objects.filter(
+    uik_14_query = Voter.objects.filter(
         uik__in=[item.uik for item in daily_data],
         voting_method='at_uik',
         confirmed_by_brigadier=True,
         voting_date=date(2025, 9, 14)
-    ).count()
+    )
+    if has_active_filters:
+        uik_14_query = uik_14_query.filter(voter_filters)
+    total_14_sep_uik = uik_14_query.count()
     total_14_sep_home = total_14_sep - total_14_sep_uik
     
-    # Данные для таблицы
+    # Данные для таблицы с учетом фильтров
     uik_table_data = []
     for item in daily_data:
-        execution_percent = item.plan_execution_percentage
+        # Используем правильную логику для фактов
+        if has_active_filters:
+            # Применяем фильтры к избирателям этого УИК
+            uik_filtered_voters = Voter.objects.filter(
+                uik=item.uik,
+                confirmed_by_brigadier=True,
+                voting_date__isnull=False
+            ).filter(voter_filters)
+            
+            fact_12_sep = uik_filtered_voters.filter(voting_date=date(2025, 9, 12)).count()
+            fact_13_sep = uik_filtered_voters.filter(voting_date=date(2025, 9, 13)).count()
+            fact_14_sep = uik_filtered_voters.filter(voting_date=date(2025, 9, 14)).count()
+            fact_total = fact_12_sep + fact_13_sep + fact_14_sep
+        else:
+            # Нет фильтров - используем существующую логику (учитывает блокировки)
+            fact_12_sep = item.get_effective_fact_12_sep()
+            fact_13_sep = item.get_effective_fact_13_sep()
+            fact_14_sep = item.get_effective_fact_14_sep()
+            fact_total = fact_12_sep + fact_13_sep + fact_14_sep
+        
+        # Процент выполнения плана
+        execution_percent = round((fact_total / item.total_plan * 100), 1) if item.total_plan > 0 else 0
         
         # Определяем цвет строки на основе выполнения плана
         if item.total_plan == 0:
@@ -471,9 +612,9 @@ def results_dashboard_callback(request, context):
             row_color = 'danger'  # Красный
         
         # Проценты по дням для таблицы
-        uik_plan_12_percent = round((item.get_effective_fact_12_sep() / item.plan_12_sep * 100), 1) if item.plan_12_sep > 0 else 0
-        uik_plan_13_percent = round((item.get_effective_fact_13_sep() / item.plan_13_sep * 100), 1) if item.plan_13_sep > 0 else 0
-        uik_plan_14_percent = round((item.get_effective_fact_14_sep() / item.plan_14_sep * 100), 1) if item.plan_14_sep > 0 else 0
+        uik_plan_12_percent = round((fact_12_sep / item.plan_12_sep * 100), 1) if item.plan_12_sep > 0 else 0
+        uik_plan_13_percent = round((fact_13_sep / item.plan_13_sep * 100), 1) if item.plan_13_sep > 0 else 0
+        uik_plan_14_percent = round((fact_14_sep / item.plan_14_sep * 100), 1) if item.plan_14_sep > 0 else 0
         
         # Информация о бригадире и агитаторах для tooltip
         if item.uik.brigadier:
@@ -491,17 +632,17 @@ def results_dashboard_callback(request, context):
         uik_table_data.append({
             'uik_number': item.uik.number,
             'plan_total': item.total_plan,
-            'fact_total': item.total_fact,
+            'fact_total': fact_total,
             'plan_execution_percent': execution_percent,
             'row_color': row_color,
             'plan_12_sep': item.plan_12_sep,
-            'fact_12_sep': item.get_effective_fact_12_sep(),
+            'fact_12_sep': fact_12_sep,
             'plan_12_percent': uik_plan_12_percent,
             'plan_13_sep': item.plan_13_sep,
-            'fact_13_sep': item.get_effective_fact_13_sep(),
+            'fact_13_sep': fact_13_sep,
             'plan_13_percent': uik_plan_13_percent,
             'plan_14_sep': item.plan_14_sep,
-            'fact_14_sep': item.get_effective_fact_14_sep(),
+            'fact_14_sep': fact_14_sep,
             'plan_14_percent': uik_plan_14_percent,
             'brigadier': brigadier_info,
             'agitators': agitators_text,
@@ -522,7 +663,7 @@ def results_dashboard_callback(request, context):
         'colors': ['#10b981', '#f59e0b']
     }
     
-    # 2. Голосование по всем группам (исключая 'other') + агитаторы
+    # 2. Голосование по всем группам (исключая 'other') + агитаторы с фильтрами
     workplace_groups = [choice[0] for choice in Workplace.GROUP_CHOICES if choice[0] != 'other']
     group_data = []
     group_voted_data = []
@@ -532,39 +673,51 @@ def results_dashboard_callback(request, context):
         group_name = dict(Workplace.GROUP_CHOICES).get(group, group)
         group_labels.append(group_name)
         
-        # Общее количество в группе
-        total_in_group = Voter.objects.filter(
+        # Общее количество в группе с фильтрами
+        group_voters_query = Voter.objects.filter(
             uik__in=[item.uik for item in daily_data],
             workplace__group=group
-        ).count()
+        )
+        if has_active_filters:
+            group_voters_query = group_voters_query.filter(voter_filters)
+        total_in_group = group_voters_query.count()
         group_data.append(total_in_group)
         
-        # Проголосовавшие в группе
-        voted_in_group = Voter.objects.filter(
+        # Проголосовавшие в группе с фильтрами
+        voted_group_query = Voter.objects.filter(
             uik__in=[item.uik for item in daily_data],
             workplace__group=group,
             confirmed_by_brigadier=True,
             voting_date__isnull=False
-        ).count()
+        )
+        if has_active_filters:
+            voted_group_query = voted_group_query.filter(voter_filters)
+        voted_in_group = voted_group_query.count()
         group_voted_data.append(voted_in_group)
     
-    # Добавляем отдельную группу для агитаторов
+    # Добавляем отдельную группу для агитаторов с фильтрами
     group_labels.append('Агитаторы')
     
-    # Общее количество агитаторов
-    total_agitators = Voter.objects.filter(
+    # Общее количество агитаторов с фильтрами
+    agitators_query = Voter.objects.filter(
         uik__in=[item.uik for item in daily_data],
         is_agitator=True
-    ).count()
+    )
+    if has_active_filters:
+        agitators_query = agitators_query.filter(voter_filters)
+    total_agitators = agitators_query.count()
     group_data.append(total_agitators)
     
-    # Проголосовавшие агитаторы
-    voted_agitators = Voter.objects.filter(
+    # Проголосовавшие агитаторы с фильтрами
+    voted_agitators_query = Voter.objects.filter(
         uik__in=[item.uik for item in daily_data],
         is_agitator=True,
         confirmed_by_brigadier=True,
         voting_date__isnull=False
-    ).count()
+    )
+    if has_active_filters:
+        voted_agitators_query = voted_agitators_query.filter(voter_filters)
+    voted_agitators = voted_agitators_query.count()
     group_voted_data.append(voted_agitators)
     
     workplace_groups_data = {
@@ -574,18 +727,24 @@ def results_dashboard_callback(request, context):
         'colors': ['#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444', '#10b981', '#f97316', '#84cc16', '#06b6d4']
     }
     
-    # 3. Специальная диаграмма для БУЗ ВО "ВГКП № 3"
-    vgkp3_total = Voter.objects.filter(
+    # 3. Специальная диаграмма для БУЗ ВО "ВГКП № 3" с фильтрами
+    vgkp3_query = Voter.objects.filter(
         uik__in=[item.uik for item in daily_data],
         workplace__name='БУЗ ВО "ВГКП № 3"'
-    ).count()
+    )
+    if has_active_filters:
+        vgkp3_query = vgkp3_query.filter(voter_filters)
+    vgkp3_total = vgkp3_query.count()
     
-    vgkp3_voted = Voter.objects.filter(
+    vgkp3_voted_query = Voter.objects.filter(
         uik__in=[item.uik for item in daily_data],
         workplace__name='БУЗ ВО "ВГКП № 3"',
         confirmed_by_brigadier=True,
         voting_date__isnull=False
-    ).count()
+    )
+    if has_active_filters:
+        vgkp3_voted_query = vgkp3_voted_query.filter(voter_filters)
+    vgkp3_voted = vgkp3_voted_query.count()
     
     vgkp3_data = {
         'labels': ['Проголосовали', 'Осталось по плану'],
@@ -669,6 +828,7 @@ def results_by_brigadiers_dashboard_callback(request, context):
     total_14_sep = 0
     
     for brigadier in all_brigadiers:
+            
         brigadier_total_plan = 0
         brigadier_total_fact = 0
         brigadier_plan_12_sep = 0
@@ -688,140 +848,148 @@ def results_by_brigadiers_dashboard_callback(request, context):
             Q(agitators__in=brigadier.assigned_agitators.all())  # УИК с назначенными агитаторами
         ).distinct().prefetch_related('agitators')
         
-        # Сначала собираем все данные по бригадиру
-        uik_data = []
-        for uik in uiks:
-            uik_total_plan = 0
-            uik_total_fact = 0
-            uik_plan_12_sep = 0
-            uik_12_sep = 0
-            uik_plan_13_sep = 0
-            uik_13_sep = 0
-            uik_plan_14_sep = 0
-            uik_14_sep = 0
+    # Сначала собираем все данные по бригадиру
+    uik_data = []
+    for uik in uiks:
+        uik_total_plan = 0
+        uik_total_fact = 0
+        uik_plan_12_sep = 0
+        uik_12_sep = 0
+        uik_plan_13_sep = 0
+        uik_13_sep = 0
+        uik_plan_14_sep = 0
+        uik_14_sep = 0
+        
+        # Агитаторы этого бригадира в этом УИК
+        # Логика: 
+        # - Если бригадир основной (brigadier=uik.brigadier), то берем агитаторов БЕЗ assigned_brigadiers ИЛИ с assigned_brigadiers=этот_бригадир
+        # - Если бригадир дополнительный, то берем агитаторов С assigned_brigadiers=этот_бригадир
+        
+        if uik.brigadier == brigadier:
+            # Основной бригадир - берем агитаторов БЕЗ assigned_brigadiers ИЛИ с assigned_brigadiers=этот_бригадир
+            agitators = uik.agitators.filter(
+                Q(assigned_brigadiers__isnull=True) | Q(assigned_brigadiers=brigadier)
+            ).order_by('last_name', 'first_name', 'middle_name')
+        else:
+            # Дополнительный бригадир - берем агитаторов С assigned_brigadiers=этот_бригадир
+            agitators = uik.agitators.filter(assigned_brigadiers=brigadier).order_by('last_name', 'first_name', 'middle_name')
+        
+        # Планы для УИК считаем по planned_date (планируемая дата голосования)
+        uik_plan_query_12 = Voter.objects.filter(
+            uik=uik,
+            agitator__in=agitators,
+            planned_date=date(2025, 9, 12)
+        )
+        uik_plan_query_13 = Voter.objects.filter(
+            uik=uik,
+            agitator__in=agitators,
+            planned_date=date(2025, 9, 13)
+        )
+        uik_plan_query_14 = Voter.objects.filter(
+            uik=uik,
+            agitator__in=agitators,
+            planned_date=date(2025, 9, 14)
+        )
+        uik_total_plan_query = Voter.objects.filter(
+            uik=uik,
+            agitator__in=agitators
+        )
+        
+        
+        uik_plan_12_sep = uik_plan_query_12.count()
+        uik_plan_13_sep = uik_plan_query_13.count()
+        uik_plan_14_sep = uik_plan_query_14.count()
+        uik_total_plan = uik_total_plan_query.count()
+        
+        agitator_data = []
+        for agitator in agitators:
+            # Считаем факты по агитатору
+            fact_query_total = Voter.objects.filter(
+                uik=uik, 
+                agitator=agitator, 
+                confirmed_by_brigadier=True
+            )
+            fact_query_12 = Voter.objects.filter(
+                uik=uik, 
+                agitator=agitator, 
+                confirmed_by_brigadier=True,
+                voting_date=date(2025, 9, 12)
+            )
+            fact_query_13 = Voter.objects.filter(
+                uik=uik, 
+                agitator=agitator, 
+                confirmed_by_brigadier=True,
+                voting_date=date(2025, 9, 13)
+            )
+            fact_query_14 = Voter.objects.filter(
+                uik=uik, 
+                agitator=agitator, 
+                confirmed_by_brigadier=True,
+                voting_date=date(2025, 9, 14)
+            )
             
-            # Агитаторы этого бригадира в этом УИК
-            # Логика: 
-            # - Если бригадир основной (brigadier=uik.brigadier), то берем агитаторов БЕЗ assigned_brigadiers ИЛИ с assigned_brigadiers=этот_бригадир
-            # - Если бригадир дополнительный, то берем агитаторов С assigned_brigadiers=этот_бригадир
             
-            if uik.brigadier == brigadier:
-                # Основной бригадир - берем агитаторов БЕЗ assigned_brigadiers ИЛИ с assigned_brigadiers=этот_бригадир
-                agitators = uik.agitators.filter(
-                    Q(assigned_brigadiers__isnull=True) | Q(assigned_brigadiers=brigadier)
-                ).order_by('last_name', 'first_name', 'middle_name')
-            else:
-                # Дополнительный бригадир - берем агитаторов С assigned_brigadiers=этот_бригадир
-                agitators = uik.agitators.filter(assigned_brigadiers=brigadier).order_by('last_name', 'first_name', 'middle_name')
+            fact_total = fact_query_total.count()
+            fact_12_sep = fact_query_12.count()
+            fact_13_sep = fact_query_13.count()
+            fact_14_sep = fact_query_14.count()
             
-            # Планы для УИК считаем по planned_date (планируемая дата голосования)
-            uik_plan_12_sep = Voter.objects.filter(
-                uik=uik,
-                agitator__in=agitators,
+            # Считаем план агитатора из базы избирателей (все избиратели этого агитатора в этом УИК)
+            plan_query_total = Voter.objects.filter(
+                uik=uik, 
+                agitator=agitator
+            )
+            plan_query_12 = Voter.objects.filter(
+                uik=uik, 
+                agitator=agitator,
                 planned_date=date(2025, 9, 12)
-            ).count()
-            
-            uik_plan_13_sep = Voter.objects.filter(
-                uik=uik,
-                agitator__in=agitators,
+            )
+            plan_query_13 = Voter.objects.filter(
+                uik=uik, 
+                agitator=agitator,
                 planned_date=date(2025, 9, 13)
-            ).count()
-            
-            uik_plan_14_sep = Voter.objects.filter(
-                uik=uik,
-                agitator__in=agitators,
+            )
+            plan_query_14 = Voter.objects.filter(
+                uik=uik, 
+                agitator=agitator,
                 planned_date=date(2025, 9, 14)
-            ).count()
+            )
             
-            # Общий план для УИК считаем по всем избирателям агитаторов этого бригадира
-            uik_total_plan = Voter.objects.filter(
-                uik=uik,
-                agitator__in=agitators
-            ).count()
             
-            agitator_data = []
-            for agitator in agitators:
-                # Считаем факты по агитатору
-                fact_total = Voter.objects.filter(
-                    uik=uik, 
-                    agitator=agitator, 
-                    confirmed_by_brigadier=True
-                ).count()
-                
-                fact_12_sep = Voter.objects.filter(
-                    uik=uik, 
-                    agitator=agitator, 
-                    confirmed_by_brigadier=True,
-                    voting_date=date(2025, 9, 12)
-                ).count()
-                
-                fact_13_sep = Voter.objects.filter(
-                    uik=uik, 
-                    agitator=agitator, 
-                    confirmed_by_brigadier=True,
-                    voting_date=date(2025, 9, 13)
-                ).count()
-                
-                fact_14_sep = Voter.objects.filter(
-                    uik=uik, 
-                    agitator=agitator, 
-                    confirmed_by_brigadier=True,
-                    voting_date=date(2025, 9, 14)
-                ).count()
-                
-                # Считаем план агитатора из базы избирателей (все избиратели этого агитатора в этом УИК)
-                plan_total = Voter.objects.filter(
-                    uik=uik, 
-                    agitator=agitator
-                ).count()
-                
-                plan_12_sep = Voter.objects.filter(
-                    uik=uik, 
-                    agitator=agitator,
-                    planned_date=date(2025, 9, 12)
-                ).count()
-                
-                plan_13_sep = Voter.objects.filter(
-                    uik=uik, 
-                    agitator=agitator,
-                    planned_date=date(2025, 9, 13)
-                ).count()
-                
-                plan_14_sep = Voter.objects.filter(
-                    uik=uik, 
-                    agitator=agitator,
-                    planned_date=date(2025, 9, 14)
-                ).count()
-                
-                # Процент выполнения плана
-                plan_12_percent = round((fact_12_sep / plan_12_sep * 100) if plan_12_sep > 0 else 0, 1)
-                plan_13_percent = round((fact_13_sep / plan_13_sep * 100) if plan_13_sep > 0 else 0, 1)
-                plan_14_percent = round((fact_14_sep / plan_14_sep * 100) if plan_14_sep > 0 else 0, 1)
-                plan_total_percent = round((fact_total / plan_total * 100) if plan_total > 0 else 0, 1)
-                
-                agitator_data.append({
-                    'row_type': 'agitator',
-                    'brigadier': '',  # ПУСТАЯ ячейка для агитатора
-                    'uik_number': f'|____',  # Символ для агитатора
-                    'agitator_name': agitator.get_short_name(),
-                    'fact_total': fact_total,
-                    'plan_total': plan_total,
-                    'plan_execution_percent': plan_total_percent,  # ОБЩИЙ ПРОЦЕНТ
-                    'plan_12_sep': plan_12_sep,
-                    'fact_12_sep': fact_12_sep,
-                    'plan_12_percent': plan_12_percent,
-                    'plan_13_sep': plan_13_sep,
-                    'fact_13_sep': fact_13_sep,
-                    'plan_13_percent': plan_13_percent,
-                    'plan_14_sep': plan_14_sep,
-                    'fact_14_sep': fact_14_sep,
-                    'plan_14_percent': plan_14_percent,
-                })
-                
-                uik_total_fact += fact_total
-                uik_12_sep += fact_12_sep
-                uik_13_sep += fact_13_sep
-                uik_14_sep += fact_14_sep
+            plan_total = plan_query_total.count()
+            plan_12_sep = plan_query_12.count()
+            plan_13_sep = plan_query_13.count()
+            plan_14_sep = plan_query_14.count()
+            
+            # Процент выполнения плана
+            plan_12_percent = round((fact_12_sep / plan_12_sep * 100) if plan_12_sep > 0 else 0, 1)
+            plan_13_percent = round((fact_13_sep / plan_13_sep * 100) if plan_13_sep > 0 else 0, 1)
+            plan_14_percent = round((fact_14_sep / plan_14_sep * 100) if plan_14_sep > 0 else 0, 1)
+            plan_total_percent = round((fact_total / plan_total * 100) if plan_total > 0 else 0, 1)
+            
+            agitator_data.append({
+                'row_type': 'agitator',
+                'brigadier': '',  # ПУСТАЯ ячейка для агитатора
+                'uik_number': f'|____',  # Символ для агитатора
+                'agitator_name': agitator.get_short_name(),
+                'fact_total': fact_total,
+                'plan_total': plan_total,
+                'plan_execution_percent': plan_total_percent,  # ОБЩИЙ ПРОЦЕНТ
+                'plan_12_sep': plan_12_sep,
+                'fact_12_sep': fact_12_sep,
+                'plan_12_percent': plan_12_percent,
+                'plan_13_sep': plan_13_sep,
+                'fact_13_sep': fact_13_sep,
+                'plan_13_percent': plan_13_percent,
+                'plan_14_sep': plan_14_sep,
+                'fact_14_sep': fact_14_sep,
+                'plan_14_percent': plan_14_percent,
+            })
+            
+            uik_total_fact += fact_total
+            uik_12_sep += fact_12_sep
+            uik_13_sep += fact_13_sep
+            uik_14_sep += fact_14_sep
             
             # Сохраняем данные по УИК (если есть план или факт)
             if uik_total_plan > 0 or uik_total_fact > 0:
